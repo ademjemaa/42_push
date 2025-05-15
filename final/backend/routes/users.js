@@ -258,4 +258,38 @@ router.get('/findByPhone/:phoneNumber', auth, async (req, res) => {
   }
 });
 
+// Check if phone number is available for registration (no auth required)
+router.get('/checkPhoneAvailability/:phoneNumber', async (req, res) => {
+  try {
+    const phoneNumber = req.params.phoneNumber;
+    
+    if (!phoneNumber) {
+      return res.status(400).json({ message: 'Phone number is required' });
+    }
+    
+    // Validate phone number format
+    const phoneRegex = /^0\d{9}$/;
+    if (!phoneRegex.test(phoneNumber)) {
+      return res.status(400).json({ 
+        message: 'Invalid phone number format',
+        available: false 
+      });
+    }
+    
+    const user = await userService.findByPhoneNumber(phoneNumber);
+    
+    // Return whether the phone number is available (true = available, false = taken)
+    res.json({ 
+      available: !user,
+      message: user ? 'Phone number is already registered' : 'Phone number is available'
+    });
+  } catch (error) {
+    console.error('Check phone availability error:', error);
+    res.status(400).json({ 
+      message: error.message || 'Failed to check phone availability',
+      available: false
+    });
+  }
+});
+
 module.exports = router; 

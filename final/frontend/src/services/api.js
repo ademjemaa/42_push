@@ -460,6 +460,31 @@ export const authAPI = {
       return null;
     }
   },
+
+  // Check if a phone number is available for registration (no auth required)
+  checkPhoneAvailability: async (phoneNumber) => {
+    try {
+      // This endpoint doesn't require authentication
+      const response = await fetch(`${API_URL}/users/checkPhoneAvailability/${phoneNumber}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to check phone availability');
+      }
+      
+      const data = await response.json();
+      return data.available; // Returns true if available, false if taken
+    } catch (error) {
+      console.error('Check phone availability error:', error);
+      // In case of error, assume number is not available to be safe
+      return false;
+    }
+  },
 };
 
 // Contacts API

@@ -59,15 +59,12 @@ const RegisterScreen = ({ navigation }) => {
   const checkPhoneNumberExists = async (number) => {
     setIsCheckingNumber(true);
     try {
-      const user = await authAPI.findUserByPhoneNumber(number);
-      if (user) {
-        // Phone number is already registered
-        setNumberExists(true);
-      } else {
-        setNumberExists(false);
-      }
+      const isAvailable = await authAPI.checkPhoneAvailability(number);
+      setNumberExists(!isAvailable);
     } catch (error) {
       console.error('Error checking phone number:', error);
+      // In case of error, assume number is not available to be safe
+      setNumberExists(true);
     } finally {
       setIsCheckingNumber(false);
     }

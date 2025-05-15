@@ -54,7 +54,7 @@ const AddContactScreen = ({ navigation }) => {
     const fetchUserInfo = async () => {
       try {
         setIsFetchingUser(true);
-        // Here you would call your API to find a user by phone number
+        // Use the authenticated endpoint since we're logged in
         const userInfo = await authAPI.findUserByPhoneNumber(phoneNumber);
         
         // Don't allow adding yourself as a contact
