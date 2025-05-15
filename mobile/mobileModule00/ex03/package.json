@@ -1,0 +1,24 @@
+{
+  "name": "ex03",
+  "version": "1.0.0",
+  "main": "ex03.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "expo": "~53.0.9",
+    "expo-screen-orientation": "^8.1.6",
+    "expo-status-bar": "~2.2.3",
+    "react": "19.0.0",
+    "react-native": "0.79.2",
+    "react-native-paper": "^5.14.3",
+    "react-native-safe-area-context": "^5.4.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0"
+  },
+  "private": true
+}
