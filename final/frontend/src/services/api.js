@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 import { Platform } from 'react-native';
 
 // API base URL - change to your backend server URL
-const API_URL = 'http://192.168.1.10:3000/api';  // Replace 192.168.1.X with your actual machine's IP address
+const API_URL = 'http://10.16.11.9:3000/api';  // Replace 192.168.1.X with your actual machine's IP address
 
 // Headers with authentication token
 const getHeaders = async () => {
@@ -143,18 +143,43 @@ export const authAPI = {
   
   register: async (userData) => {
     try {
+      // Extract avatar URI and create a copy of userData without it
+      const avatarUri = userData.avatar_uri;
+      const userDataForRegistration = { ...userData };
+      delete userDataForRegistration.avatar_uri;
+
+      // First register the user
       const response = await fetch(`${API_URL}/users/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(userData),
+        body: JSON.stringify(userDataForRegistration),
       });
       
       const data = await response.json();
       
       if (!response.ok) {
         throw new Error(data.message || 'Registration failed');
+      }
+      
+      // If avatar is provided, log in and upload the avatar
+      if (avatarUri) {
+        try {
+          // Login to get token
+          const loginResponse = await authAPI.login({
+            phone_number: userData.phone_number,
+            password: userData.password
+          });
+          
+          if (loginResponse && loginResponse.token) {
+            // Upload avatar
+            await authAPI.uploadAvatar(avatarUri);
+          }
+        } catch (avatarError) {
+          console.error('Avatar upload after registration failed:', avatarError);
+          // Continue with registration even if avatar upload fails
+        }
       }
       
       return data;
@@ -200,7 +225,7 @@ export const authAPI = {
       
       return data;
     } catch (error) {
-      console.error('Get user error:', error);
+      // Don't log the error in production
       throw error;
     }
   },

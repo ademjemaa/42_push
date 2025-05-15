@@ -119,13 +119,23 @@ export const checkContactExists = async (contactId) => {
 // Delete a contact and add it to the deleted cache
 export const deleteContact = async (contactId) => {
   try {
+    // Get the contact's phone number before deleting
+    let phoneNumber = null;
+    try {
+      const contact = await contactsAPI.getContactById(contactId);
+      phoneNumber = contact?.phone_number;
+      console.log(`[CONTACTS-SERVICE] Got phone number ${phoneNumber} for contact ID ${contactId} before deletion`);
+    } catch (error) {
+      console.log(`[CONTACTS-SERVICE] Couldn't get phone number for contact ID ${contactId} before deletion:`, error.message);
+    }
+    
     // Delete the contact using the API
     await contactsAPI.deleteContact(contactId);
     
-    // Mark as deleted in the cache
-    await deletedContactsCache.markAsDeleted(contactId);
+    // Mark as deleted in the cache, including phone number if available
+    await deletedContactsCache.markAsDeleted(contactId, phoneNumber);
     
-    console.log(`[CONTACTS-SERVICE] Successfully deleted contact ID ${contactId} and added to cache`);
+    console.log(`[CONTACTS-SERVICE] Successfully deleted contact ID ${contactId} (phone: ${phoneNumber || 'unknown'}) and added to cache`);
     return true;
   } catch (error) {
     console.error(`[CONTACTS-SERVICE] Error deleting contact:`, error);
@@ -151,6 +161,54 @@ export const initDeletedContactsCache = async () => {
   }
 };
 
+// Remove contact ID from deleted cache
+export const removeFromDeletedCache = async (contactId) => {
+  if (!contactId) return;
+  
+  await deletedContactsCache.unmarkAsDeleted(contactId);
+  console.log(`[CONTACTS-SERVICE] Removed contact ID ${contactId} from deleted cache`);
+};
+
+// Check if any deleted contact has the given phone number and remove it from cache
+export const cleanupDeletedContactsByPhone = async (phoneNumber) => {
+  try {
+    if (!phoneNumber) return;
+    
+    console.log(`[CONTACTS-SERVICE] Looking for deleted contacts with phone number: ${phoneNumber}`);
+    
+    // Check if this phone number is directly in the deleted cache
+    if (deletedContactsCache.isPhoneDeleted(phoneNumber)) {
+      // Get the contact ID for this phone number
+      const contactId = deletedContactsCache.getContactIdByPhone(phoneNumber);
+      
+      console.log(`[CONTACTS-SERVICE] Found deleted contact with ID ${contactId} that has phone ${phoneNumber}, removing from cache`);
+      await deletedContactsCache.unmarkPhoneAsDeleted(phoneNumber);
+      return;
+    }
+    
+    // Use the old method as fallback for contacts that were deleted before this update
+    // Get all deleted contact IDs
+    const deletedIds = deletedContactsCache.getAll();
+    if (!deletedIds.length) {
+      return; // No deleted contacts to check
+    }
+    
+    // For each deleted ID, check if it has the same phone number
+    const allContacts = await contactsAPI.getAllContacts();
+    const deletedContact = allContacts.find(contact => 
+      contact.phone_number === phoneNumber && 
+      deletedIds.includes(contact.id.toString())
+    );
+    
+    if (deletedContact) {
+      console.log(`[CONTACTS-SERVICE] Found deleted contact with ID ${deletedContact.id} that has phone ${phoneNumber}, removing from cache`);
+      await deletedContactsCache.unmarkAsDeleted(deletedContact.id);
+    }
+  } catch (error) {
+    console.error('[CONTACTS-SERVICE] Error cleaning up deleted contacts by phone:', error);
+  }
+};
+
 // Export default for module imports
 export default {
   getContactById,
@@ -159,5 +217,7 @@ export default {
   findContactByPhoneNumber,
   checkContactExists,
   deleteContact,
-  initDeletedContactsCache
+  initDeletedContactsCache,
+  removeFromDeletedCache,
+  cleanupDeletedContactsByPhone
 }; 

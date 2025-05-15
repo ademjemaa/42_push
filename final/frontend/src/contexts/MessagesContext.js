@@ -2,6 +2,8 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import { messagesAPI, getSocket } from '../services/api';
 import { useAuth } from './AuthContext';
 import { useContacts } from './ContactsContext';
+// Add EventEmitter for cross-context communication
+import { EventRegister } from 'react-native-event-listeners';
 
 // Create Messages Context
 export const MessagesContext = createContext();
@@ -65,6 +67,9 @@ export const MessagesProvider = ({ children }) => {
           return;
         }
 
+        // Import the contactService directly to avoid circular dependencies
+        const contactsService = require('../services/contactsService');
+
         // Check if this message contains auto-created contact information
         if (data.auto_created_contact) {
           console.log('[MESSAGES] Message contains auto-created contact:', data.auto_created_contact);
@@ -111,13 +116,51 @@ export const MessagesProvider = ({ children }) => {
           return;
         }
         
-        // Import the contactService directly to avoid circular dependencies
-        const contactsService = require('../services/contactsService');
+        // Try to find the contact in three different ways:
         
-        // Find the contact that represents this sender (user looking up sender)
-        // This is a user receiving a message, so they need to find which contact
-        // in their contact list represents the sender
-        const contactInfo = await contactsService.findContactByContactUserId(senderId);
+        // 1. Find the contact that represents this sender by contact_user_id
+        let contactInfo = await contactsService.findContactByContactUserId(senderId);
+        
+        // 2. If not found, try finding by phone number if available
+        if (!contactInfo && data.sender_phone_number) {
+          console.log('[MESSAGES] Trying to find contact by phone number:', data.sender_phone_number);
+          contactInfo = await contactsService.findContactByPhoneNumber(data.sender_phone_number);
+        }
+        
+        // 3. If we can't find any contact, check if we need to create one
+        if (!contactInfo && data.sender_phone_number) {
+          console.log('[MESSAGES] No existing contact found for sender, creating contact from sender info');
+          
+          // Force a refresh of the contacts to get any new contacts that might have been created
+          await fetchContacts();
+          
+          // Try once more after refreshing contacts
+          contactInfo = await contactsService.findContactByPhoneNumber(data.sender_phone_number);
+          
+          // If we still couldn't find the contact, we need a UI refresh anyway
+          if (!contactInfo) {
+            console.log('[MESSAGES] Contact not found even after refresh, forcing UI update');
+            fetchContacts();
+            
+            // Since we couldn't find a contact but have a phone number, try to create a temporary one for UI
+            const tempContactInfo = {
+              id: `temp-${Date.now()}`,
+              phone_number: data.sender_phone_number,
+              nickname: data.sender_phone_number,
+              user_id: userId,
+              contact_user_id: senderId,
+              is_temp: true
+            };
+
+            // Use this temporary contact to at least show the message
+            contactInfo = tempContactInfo;
+            
+            // Force another contacts refresh after a delay to ensure backend sync
+            setTimeout(() => {
+              fetchContacts();
+            }, 2000);
+          }
+        }
         
         if (contactInfo) {
           console.log('[MESSAGES] Found matching contact for sender:', contactInfo.id);
@@ -155,62 +198,17 @@ export const MessagesProvider = ({ children }) => {
             };
           });
           
-          // Fetch contacts to update last message preview
+          // Always fetch contacts to update last message preview
           fetchContacts();
         } else {
-          console.log('[MESSAGES] No matching contact found for sender ID:', senderId);
+          console.log('[MESSAGES] No matching contact found, forcing contacts refresh');
+          // Request immediate contacts refresh
+          fetchContacts();
           
-          // Try finding by phone number if available
-          if (data.sender_phone_number) {
-            console.log('[MESSAGES] Trying to find contact by phone number:', data.sender_phone_number);
-            const contactByPhone = await contactsService.findContactByPhoneNumber(data.sender_phone_number);
-            
-            if (contactByPhone) {
-              console.log('[MESSAGES] Found contact by phone number:', contactByPhone.id);
-              const contactId = contactByPhone.id.toString();
-              
-              // Create the message object in our expected format
-              const message = {
-                id: messageId,
-                sender_id: senderId,
-                receiver_id: receiverId,
-                content: content,
-                timestamp: data.timestamp,
-                is_read: false
-              };
-              
-              // Update the conversations state with the new message
-              setConversations(prev => {
-                const prevMessages = prev[contactId] || [];
-                
-                // Check for duplicates
-                const isDuplicate = prevMessages.some(msg => 
-                  msg.content === content &&
-                  Math.abs(new Date(msg.timestamp) - new Date(data.timestamp)) < 1000
-                );
-                
-                if (isDuplicate) {
-                  console.log('[MESSAGES] Ignoring duplicate message');
-                  return prev;
-                }
-                
-                console.log('[MESSAGES] Adding message to conversation with contactId found by phone:', contactId);
-                return {
-                  ...prev,
-                  [contactId]: [...prevMessages, message]
-                };
-              });
-              
-              // Refresh contacts to update last message preview
-              fetchContacts();
-              return;
-            }
-            
-            console.log('[MESSAGES] No contact found by phone number either, triggering contacts refresh');
+          // Also schedule another refresh after a delay to ensure backend sync
+          setTimeout(() => {
             fetchContacts();
-          } else {
-            console.log('[MESSAGES] Message will not be displayed until user refreshes conversation');
-          }
+          }, 2000);
         }
       } catch (error) {
         console.error('[MESSAGES] Error processing new message:', error);
@@ -318,6 +316,13 @@ export const MessagesProvider = ({ children }) => {
     };
   }, [userToken, userId]);
   
+  // Handle incoming message and auto-created contact information
+  const notifyContactsChanged = () => {
+    // Broadcast a global event that contacts have changed
+    EventRegister.emit('contactsChanged', { timestamp: Date.now() });
+    console.log('[MESSAGES] Broadcast contactsChanged event');
+  };
+  
   // Fetch conversation between current user and a contact
   const fetchConversation = async (contactId) => {
     try {
@@ -360,6 +365,9 @@ export const MessagesProvider = ({ children }) => {
         [contactId]: fetchedMessages
       }));
       
+      // Notify that contacts might have changed
+      notifyContactsChanged();
+      
       return fetchedMessages;
     } catch (error) {
       // Don't log errors for deleted contacts
@@ -384,7 +392,7 @@ export const MessagesProvider = ({ children }) => {
     }
   };
   
-  // Send message
+  // Send message with enhanced notification
   const sendMessage = async (receiverId, content) => {
     if (!userToken || !userId || !receiverId || !content) {
       console.error('[MESSAGES] Missing required data for sending message:', {
@@ -400,31 +408,112 @@ export const MessagesProvider = ({ children }) => {
     setError(null);
     
     try {
-      console.log('[MESSAGES] Sending message to receiver ID:', receiverId);
+      // First check if socket is available
+      const socket = getSocket();
+      let tempMessageId = `temp-${Date.now()}`;
+      let messageTimestamp = new Date().toISOString();
       
-      // Send message via API
-      const message = await messagesAPI.sendMessage(receiverId, content);
-      console.log('[MESSAGES] Message sent via API successfully:', JSON.stringify(message));
+      // Create temporary message for immediate display
+      const tempMessage = {
+        id: tempMessageId,
+        sender_id: userId,
+        receiver_id: receiverId,
+        content,
+        timestamp: messageTimestamp,
+        is_read: true,
+        is_pending: true
+      };
       
-      // Update conversation
-      setConversations(prevConversations => {
-        const prevMessages = prevConversations[receiverId] || [];
-        console.log('[MESSAGES] Updating conversation with new message');
+      // Immediately update the local state with the temporary message
+      setConversations(prev => {
+        const prevMessages = prev[receiverId] || [];
         return {
-          ...prevConversations,
-          [receiverId]: [...prevMessages, message]
+          ...prev,
+          [receiverId]: [...prevMessages, tempMessage]
         };
       });
       
-      // Fetch contacts to update last message
-      console.log('[MESSAGES] Fetching contacts to update last message');
+      // Broadcast that contacts/messages might have changed
+      notifyContactsChanged();
+      
+      // If socket is available, send the message through socket first
+      if (socket && socket.connected) {
+        console.log('[MESSAGES] Socket connected, sending message via socket');
+        
+        try {
+          // We use a different API method for socket-only sending
+          await messagesAPI.sendSocketMessage(userId, receiverId, content);
+          
+          console.log('[MESSAGES] Message sent via socket');
+        } catch (socketError) {
+          console.error('[MESSAGES] Socket error sending message:', socketError);
+          
+          // Fall back to API if socket fails
+          const result = await messagesAPI.sendMessage(receiverId, content);
+          
+          console.log('[MESSAGES] Message sent via API fallback:', result);
+        }
+      } else {
+        // Socket not available, use REST API
+        console.log('[MESSAGES] Socket not connected, sending message via API');
+        
+        const result = await messagesAPI.sendMessage(receiverId, content);
+        
+        console.log('[MESSAGES] Message sent via API:', result);
+      }
+      
+      // Always refresh contacts list to update last message
       fetchContacts();
       
-      return message;
-    } catch (e) {
-      console.error('[MESSAGES] Error sending message:', e);
-      setError(e.message);
-      throw e;
+      // After sending, refresh the conversation to get the actual message
+      // with its database ID from the server
+      setTimeout(async () => {
+        try {
+          await fetchConversation(receiverId);
+          // Double refresh contacts to ensure UI updates with new/updated contact relationship
+          fetchContacts();
+        } catch (refreshError) {
+          console.error('[MESSAGES] Error refreshing conversation after send:', refreshError);
+        }
+      }, 1000);
+
+      // Additional refresh after 3 seconds to ensure contacts are fully updated
+      setTimeout(() => {
+        fetchContacts();
+      }, 3000);
+      
+      return tempMessage;
+    } catch (error) {
+      setError(error.message);
+      console.error('Error sending message:', error);
+      
+      // On error, mark the message as failed in the UI
+      setConversations(prev => {
+        const prevMessages = prev[receiverId] || [];
+        
+        if (prevMessages.length === 0) return prev;
+        
+        const lastIndex = prevMessages.length - 1;
+        const lastMessage = prevMessages[lastIndex];
+        
+        // Only update if the last message is a pending message
+        if (!lastMessage.is_pending) return prev;
+        
+        const updatedMessages = [...prevMessages];
+        updatedMessages[lastIndex] = {
+          ...lastMessage,
+          is_pending: false,
+          delivery_failed: true,
+          error_message: error.message || 'Failed to send message'
+        };
+        
+        return {
+          ...prev,
+          [receiverId]: updatedMessages
+        };
+      });
+      
+      throw error;
     } finally {
       setIsLoading(false);
     }
@@ -498,7 +587,7 @@ export const MessagesProvider = ({ children }) => {
     }
   };
   
-  // Context value with removed unread count
+  // Context value with global notification support
   const contextValue = {
     conversations,
     isLoading,
@@ -510,7 +599,8 @@ export const MessagesProvider = ({ children }) => {
     getCachedConversation,
     clearConversation,
     deleteConversation,
-    clearMessages
+    clearMessages,
+    notifyContactsChanged
   };
   
   return (

@@ -22,7 +22,10 @@ export const AuthProvider = ({ children }) => {
         const storedProfile = await AsyncStorage.getItem('userProfile');
         
         if (storedToken && storedUserId) {
-          console.log('[AUTH] Found stored credentials, validating with server...');
+          // Only log this in development mode
+          if (__DEV__) {
+            console.log('[AUTH] Found stored credentials, validating with server...');
+          }
           
           // Validate token with server before considering user as logged in
           try {
@@ -34,7 +37,9 @@ export const AuthProvider = ({ children }) => {
             const userData = await authAPI.getCurrentUser();
             
             if (userData) {
-              console.log('[AUTH] Token validated successfully');
+              if (__DEV__) {
+                console.log('[AUTH] Token validated successfully');
+              }
               
               // Update user profile with fresh data
               setUserProfile(userData);
@@ -52,36 +57,49 @@ export const AuthProvider = ({ children }) => {
               
               // Only initialize socket if we have a valid user
               if (userData && userData.id) {
-                console.log('[AUTH] Initializing socket with validated user ID:', userData.id);
+                if (__DEV__) {
+                  console.log('[AUTH] Initializing socket with validated user ID:', userData.id);
+                }
                 const socket = await initSocket(userData.id.toString());
                 
                 // Setup socket event listener for invalid user detection
                 if (socket) {
                   socket.on('client_event', (event) => {
                     if (event.type === 'invalid_user_detected') {
-                      console.log('[AUTH] Received invalid user notification from socket, logging out...');
+                      if (__DEV__) {
+                        console.log('[AUTH] Received invalid user notification from socket, logging out...');
+                      }
                       // Log out automatically since the user record doesn't exist anymore
                       logout();
                     }
                   });
                 }
               } else {
-                console.log('[AUTH] Not initializing socket - missing valid user data');
+                if (__DEV__) {
+                  console.log('[AUTH] Not initializing socket - missing valid user data');
+                }
               }
             }
           } catch (error) {
-            console.error('[AUTH] Error validating token:', error);
-            // On error, clear credentials
+            // Don't log the error, just silently clear credentials
+            // This handles the "User not found" case quietly
+            
+            // Clean up stored credentials
             await AsyncStorage.removeItem('userToken');
             await AsyncStorage.removeItem('userId');
             await AsyncStorage.removeItem('userProfile');
+            
+            // Reset auth state
             setUserToken(null);
             setUserId(null);
             setUserProfile(null);
           }
         }
       } catch (e) {
-        console.error('[AUTH] Failed to load user data from storage', e);
+        // Only log storage errors in development mode
+        if (__DEV__) {
+          console.error('[AUTH] Failed to load user data from storage', e);
+        }
       } finally {
         setIsLoading(false);
       }

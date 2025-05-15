@@ -3,6 +3,8 @@ import { contactsAPI, authAPI } from '../services/api';
 import { useAuth } from './AuthContext';
 import contactsService from '../services/contactsService';
 import deletedContactsCache from '../services/DeletedContactsCache';
+// Add EventEmitter for cross-context communication
+import { EventRegister } from 'react-native-event-listeners';
 
 // Create Contacts Context
 export const ContactsContext = createContext();
@@ -13,6 +15,8 @@ export const ContactsProvider = ({ children }) => {
   const [contacts, setContacts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  // Create a reference to track last fetch time to prevent too frequent refreshes
+  const [lastFetchTime, setLastFetchTime] = useState(0);
   
   // Initialize the deleted contacts cache on mount
   useEffect(() => {
@@ -26,6 +30,33 @@ export const ContactsProvider = ({ children }) => {
     
     initCache();
   }, []);
+  
+  // Listen for contact change events from other contexts
+  useEffect(() => {
+    const listener = EventRegister.addEventListener('contactsChanged', (data) => {
+      console.log('[CONTACTS] Received contactsChanged event:', data);
+      
+      // Debounce fetch calls by checking last fetch time
+      const now = Date.now();
+      if (now - lastFetchTime > 2000) { // Only refresh if it's been more than 2 seconds
+        console.log('[CONTACTS] Refreshing contacts due to contactsChanged event');
+        fetchContacts();
+      } else {
+        console.log('[CONTACTS] Ignoring contactsChanged event due to debounce');
+        
+        // Schedule a refresh after debounce period
+        setTimeout(() => {
+          console.log('[CONTACTS] Performing delayed refresh after contactsChanged event');
+          fetchContacts();
+        }, 2500);
+      }
+    });
+    
+    // Cleanup listener on unmount
+    return () => {
+      EventRegister.removeEventListener(listener);
+    };
+  }, [lastFetchTime]); // Include lastFetchTime in dependencies
   
   // Fetch contacts whenever userToken changes
   useEffect(() => {
@@ -44,6 +75,9 @@ export const ContactsProvider = ({ children }) => {
     setError(null);
     
     try {
+      // Update last fetch time
+      setLastFetchTime(Date.now());
+      
       const data = await contactsAPI.getAllContacts();
       
       // Load user avatars for contacts that have a user ID
@@ -59,6 +93,7 @@ export const ContactsProvider = ({ children }) => {
       }
       
       setContacts(data);
+      console.log(`[CONTACTS] Successfully fetched ${data.length} contacts`);
     } catch (e) {
       setError(e.message);
       console.error('Failed to fetch contacts:', e);
@@ -118,7 +153,18 @@ export const ContactsProvider = ({ children }) => {
     setError(null);
     
     try {
+      // First check if there's a deleted contact with the same phone number
+      // and remove it from the deleted cache
+      if (contactData.phone_number) {
+        console.log(`[CONTACTS] Cleaning up any deleted contacts with phone number: ${contactData.phone_number}`);
+        await contactsService.cleanupDeletedContactsByPhone(contactData.phone_number);
+      }
+      
       const newContact = await contactsAPI.createContact(contactData);
+      
+      // Remove from deleted contacts cache if it was there previously
+      console.log(`[CONTACTS] New contact created with ID: ${newContact.id}. Removing from deleted cache if present.`);
+      await deletedContactsCache.unmarkAsDeleted(newContact.id);
       
       // If the new contact has a user ID, try to get their avatar
       if (newContact.contact_user_id) {

@@ -120,7 +120,6 @@ const ChatScreen = ({ route, navigation }) => {
           ),
         });
         
-        console.log('[CHAT-DEBUG] Full contact details:', JSON.stringify(contactInfo));
         console.log('[CHAT-DEBUG] Contact record ID:', contactInfo.id);
         
         // The contact_user_id represents the actual user this contact refers to

@@ -1,6 +1,7 @@
 const { runQuery, getOne, getAll } = require('../db/database');
 const userService = require('./userService');
-const messageService = require('./messageService');
+// Remove direct import of messageService to break circular dependency
+// const messageService = require('./messageService');
 
 // Get all contacts for a user
 const getAllContacts = async (userId) => {
@@ -87,6 +88,17 @@ const createContact = async (userId, contactData) => {
       throw new Error('Phone number must be 0 followed by 9 digits');
     }
     
+    // Get the current user to check if they're trying to add themselves
+    const currentUser = await userService.getUserById(userId);
+    if (!currentUser) {
+      throw new Error('Your user account was not found');
+    }
+    
+    // Check if trying to add own number
+    if (currentUser.phone_number === phone_number) {
+      throw new Error('You cannot add your own number as a contact');
+    }
+    
     // Check if contact already exists for this user
     const existingContact = await getOne(
       'SELECT * FROM contacts WHERE user_id = ? AND phone_number = ?',
@@ -94,12 +106,18 @@ const createContact = async (userId, contactData) => {
     );
     
     if (existingContact) {
-      throw new Error('Contact already exists');
+      throw new Error('Contact already exists in your contacts list');
     }
     
     // Check if the phone number belongs to a registered user
     const contactUser = await userService.findByPhoneNumber(phone_number);
-    const contactUserId = contactUser ? contactUser.id : null;
+    
+    // Only allow adding users that exist in the system
+    if (!contactUser) {
+      throw new Error('No registered user found with this phone number');
+    }
+    
+    const contactUserId = contactUser.id;
     
     // Insert contact into database
     const result = await runQuery(
@@ -202,6 +220,9 @@ const deleteContact = async (userId, contactId) => {
     // Delete all messages between the users
     if (contactUserId) {
       console.log(`[CONTACT-SERVICE] Deleting messages between user ${userId} and contact user ${contactUserId}`);
+      
+      // Lazy-load messageService to avoid circular dependency
+      const messageService = require('./messageService');
       await messageService.deleteConversation(userId, contactUserId);
     } else {
       console.log(`[CONTACT-SERVICE] Contact has no associated user ID - deleting messages using contact ID directly`);

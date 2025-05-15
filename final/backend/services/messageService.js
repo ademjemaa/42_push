@@ -150,7 +150,6 @@ const handleIncomingMessage = async (messageData) => {
     const message = await saveMessage(messageData);
     console.log(`[BACKEND-DEBUG] Message saved with ID: ${message.id}`);
     
-    console.log(`[BACKEND-DEBUG] Found sender: ${JSON.stringify(senderUser)}`);
     
     // Check if the receiver has the sender as a contact
     const contact = await getOne(

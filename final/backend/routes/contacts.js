@@ -30,11 +30,30 @@ router.get('/:id', auth, async (req, res) => {
 // Create a new contact
 router.post('/', auth, async (req, res) => {
   try {
+    console.log('[CONTACTS] Creating new contact:', JSON.stringify(req.body));
+    console.log('[CONTACTS] User ID:', req.user.userId);
+    
     const contact = await contactService.createContact(req.user.userId, req.body);
+    
+    console.log('[CONTACTS] Contact created successfully:', contact.id);
     res.status(201).json(contact);
   } catch (error) {
-    console.error('Create contact error:', error);
-    res.status(400).json({ message: error.message || 'Failed to create contact' });
+    console.error('[CONTACTS] Create contact error:', error.message);
+    
+    // Return appropriate error status and message
+    let status = 400;
+    
+    // More specific error statuses based on error type
+    if (error.message.includes('No registered user found')) {
+      status = 404;
+    } else if (error.message.includes('already exists')) {
+      status = 409; // Conflict
+    }
+    
+    res.status(status).json({ 
+      message: error.message || 'Failed to create contact',
+      error_code: error.code || 'CONTACT_CREATION_FAILED'
+    });
   }
 });
 

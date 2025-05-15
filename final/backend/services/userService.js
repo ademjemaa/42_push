@@ -4,30 +4,24 @@ const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
 
-// JWT secret key - in production this should be in an environment variable
 const JWT_SECRET = 'your_jwt_secret_key';
 
-// Register a new user
 const register = async (userData) => {
   const { phone_number, username, password } = userData;
   
   try {
-    // Validate phone number format: 0 followed by 9 digits
     const phoneRegex = /^0\d{9}$/;
     if (!phoneRegex.test(phone_number)) {
       throw new Error('Phone number must be 0 followed by 9 digits');
     }
     
-    // Check if user already exists
     const existingUser = await getOne('SELECT * FROM users WHERE phone_number = ?', [phone_number]);
     if (existingUser) {
       throw new Error('User with this phone number already exists');
     }
     
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
     
-    // Insert user into database
     const result = await runQuery(
       'INSERT INTO users (phone_number, username, password) VALUES (?, ?, ?)',
       [phone_number, username, hashedPassword]
@@ -42,28 +36,23 @@ const register = async (userData) => {
   }
 };
 
-// Login user
 const login = async (phone_number, password) => {
   try {
-    // Validate phone number format: 0 followed by 9 digits
     const phoneRegex = /^0\d{9}$/;
     if (!phoneRegex.test(phone_number)) {
       throw new Error('Phone number must be 0 followed by 9 digits');
     }
     
-    // Find user
     const user = await getOne('SELECT * FROM users WHERE phone_number = ?', [phone_number]);
     if (!user) {
       throw new Error('User not found');
     }
     
-    // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       throw new Error('Invalid password');
     }
     
-    // Generate JWT token
     const token = jwt.sign(
       { userId: user.id, phone_number: user.phone_number },
       JWT_SECRET,
@@ -84,7 +73,6 @@ const login = async (phone_number, password) => {
   }
 };
 
-// Get user by ID
 const getUserById = async (userId) => {
   try {
     const user = await getOne(
@@ -102,16 +90,13 @@ const getUserById = async (userId) => {
   }
 };
 
-// Update user avatar
 const updateAvatar = async (userId, avatarBuffer) => {
   try {
-    // Check if user exists
     const user = await getOne('SELECT * FROM users WHERE id = ?', [userId]);
     if (!user) {
       throw new Error('User not found');
     }
     
-    // Update avatar in database
     await runQuery('UPDATE users SET avatar = ? WHERE id = ?', [avatarBuffer, userId]);
     
     return { success: true, message: 'Avatar updated successfully' };
@@ -120,7 +105,6 @@ const updateAvatar = async (userId, avatarBuffer) => {
   }
 };
 
-// Get user avatar
 const getAvatar = async (userId) => {
   try {
     const user = await getOne('SELECT avatar FROM users WHERE id = ?', [userId]);
@@ -134,7 +118,6 @@ const getAvatar = async (userId) => {
   }
 };
 
-// Update user profile
 const updateProfile = async (userId, userData) => {
   try {
     const { username } = userData;
@@ -152,10 +135,8 @@ const updateProfile = async (userId, userData) => {
   }
 };
 
-// Find user by phone number
 const findByPhoneNumber = async (phoneNumber) => {
   try {
-    // Validate phone number format: 0 followed by 9 digits
     const phoneRegex = /^0\d{9}$/;
     if (!phoneRegex.test(phoneNumber)) {
       throw new Error('Phone number must be 0 followed by 9 digits');
@@ -172,7 +153,6 @@ const findByPhoneNumber = async (phoneNumber) => {
   }
 };
 
-// Get current user (full profile including avatar)
 const getCurrentUser = async (userId) => {
   try {
     const user = await getOne(
@@ -184,7 +164,6 @@ const getCurrentUser = async (userId) => {
       throw new Error('User not found');
     }
     
-    // Return user with avatar if available
     return {
       id: user.id,
       phone_number: user.phone_number,

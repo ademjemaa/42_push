@@ -18,12 +18,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Avatar from '../../components/Avatar';
 import { authAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import contactsService from '../../services/contactsService';
 
 const AddContactScreen = ({ navigation }) => {
   const { t } = useTranslation();
   const { headerColor } = useTheme();
   const { createContact, findContactByPhoneNumber, isLoading } = useContacts();
-  const { userId } = useAuth();
+  const { userId, userProfile } = useAuth();
   
   const [phoneNumber, setPhoneNumber] = useState('');
   const [nickname, setNickname] = useState('');
@@ -32,11 +33,13 @@ const AddContactScreen = ({ navigation }) => {
   const [fetchedUser, setFetchedUser] = useState(null);
   const [isFetchingUser, setIsFetchingUser] = useState(false);
   const [userNotFound, setUserNotFound] = useState(false);
+  const [isOwnNumber, setIsOwnNumber] = useState(false);
   
   // Phone number validation and user info fetching
   useEffect(() => {
     // Reset states when phone number changes
     setUserNotFound(false);
+    setIsOwnNumber(false);
     
     // Validate phone number format: 0 followed by 9 digits
     const phoneRegex = /^0\d{9}$/;
@@ -50,6 +53,14 @@ const AddContactScreen = ({ navigation }) => {
       return;
     }
     
+    // Check if this is the user's own number
+    if (userProfile && userProfile.phone_number === phoneNumber) {
+      setIsOwnNumber(true);
+      setFetchedUser(null);
+      setUserAvatar(null);
+      return;
+    }
+    
     // Don't try to fetch if this is the user's own number
     const fetchUserInfo = async () => {
       try {
@@ -57,14 +68,15 @@ const AddContactScreen = ({ navigation }) => {
         // Use the authenticated endpoint since we're logged in
         const userInfo = await authAPI.findUserByPhoneNumber(phoneNumber);
         
-        // Don't allow adding yourself as a contact
-        if (userInfo && userInfo.id === userId) {
-          setFetchedUser(null);
-          setUserAvatar(null);
-          return;
-        }
-        
         if (userInfo) {
+          // Double check it's not user's own number
+          if (userInfo.id === userId) {
+            setIsOwnNumber(true);
+            setFetchedUser(null);
+            setUserAvatar(null);
+            return;
+          }
+          
           setFetchedUser(userInfo);
           setUserNotFound(false);
           // If user has a username/nickname, pre-fill it
@@ -95,17 +107,22 @@ const AddContactScreen = ({ navigation }) => {
       }
     };
     
-    // Only fetch if the number is valid and not the user's own number
-    if (isValid) {
+    // Only fetch if the number is valid
+    if (isValid && !isOwnNumber) {
       fetchUserInfo();
     }
-  }, [phoneNumber, userId]);
+  }, [phoneNumber, userId, userProfile]);
   
   // Handle phone number input with formatting
   const handlePhoneNumberChange = (text) => {
     // Only allow digits and limit to 10 characters (0 + 9 digits)
     const formattedNumber = text.replace(/[^0-9]/g, '').slice(0, 10);
     setPhoneNumber(formattedNumber);
+  };
+  
+  // Determine if save button should be disabled
+  const isSaveDisabled = () => {
+    return !validNumber || isLoading || userNotFound || isOwnNumber || isFetchingUser;
   };
   
   // Save new contact
@@ -121,14 +138,28 @@ const AddContactScreen = ({ navigation }) => {
       return;
     }
     
-    // Check if contact already exists
-    const existingContact = findContactByPhoneNumber(phoneNumber);
-    if (existingContact) {
-      Alert.alert(t('common.error'), t('contacts.phoneExists'));
+    if (isOwnNumber) {
+      Alert.alert(t('common.error'), t('contacts.cannotAddSelf', 'You cannot add your own number as a contact'));
+      return;
+    }
+    
+    if (userNotFound) {
+      Alert.alert(t('common.error'), t('contacts.noRegisteredUser', 'No user found with this number'));
       return;
     }
     
     try {
+      // Clean up deleted contacts cache for this phone number
+      // to avoid conflicts with previously deleted contacts
+      await contactsService.cleanupDeletedContactsByPhone(phoneNumber);
+      
+      // Check if contact already exists (after cleaning up cache)
+      const existingContact = findContactByPhoneNumber(phoneNumber);
+      if (existingContact) {
+        Alert.alert(t('common.error'), t('contacts.phoneExists'));
+        return;
+      }
+      
       const contactData = {
         phone_number: phoneNumber,
         nickname: nickname.trim() || null,
@@ -193,8 +224,13 @@ const AddContactScreen = ({ navigation }) => {
               </Text>
             )}
             {phoneNumber && validNumber && userNotFound && !isFetchingUser && (
-              <Text style={styles.userNotFoundText}>
+              <Text style={styles.errorText}>
                 {t('contacts.noRegisteredUser', 'No user found with this number')}
+              </Text>
+            )}
+            {phoneNumber && validNumber && isOwnNumber && (
+              <Text style={styles.errorText}>
+                {t('contacts.cannotAddSelf', 'You cannot add your own number as a contact')}
               </Text>
             )}
           </View>
@@ -213,10 +249,10 @@ const AddContactScreen = ({ navigation }) => {
             style={[
               styles.saveButton, 
               { backgroundColor: headerColor },
-              (!validNumber || isLoading) ? styles.disabledButton : {}
+              isSaveDisabled() ? styles.disabledButton : {}
             ]}
             onPress={handleSaveContact}
-            disabled={!validNumber || isLoading}
+            disabled={isSaveDisabled()}
           >
             {isLoading ? (
               <ActivityIndicator color="white" />
@@ -278,11 +314,6 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: 'red',
-    marginTop: 5,
-    fontSize: 12,
-  },
-  userNotFoundText: {
-    color: '#FF8C00',
     marginTop: 5,
     fontSize: 12,
   },
