@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useOrientation } from '../../hooks/useOrientation';
+import { useGlobalOrientation } from '../../contexts/OrientationContext';
 import * as ImagePicker from 'expo-image-picker';
 import Avatar from '../../components/Avatar';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,7 +26,7 @@ const RegisterScreen = ({ navigation }) => {
   const { t } = useTranslation();
   const { headerColor } = useTheme();
   const { register, isLoading } = useAuth();
-  const { isPortrait } = useOrientation();
+  const { isPortrait } = useGlobalOrientation();
   
   const [phoneNumber, setPhoneNumber] = useState('');
   const [username, setUsername] = useState('');

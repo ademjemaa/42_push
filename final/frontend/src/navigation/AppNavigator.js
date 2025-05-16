@@ -4,10 +4,15 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
+import { useSelector } from 'react-redux';
 
-// Contexts
+// Contexts and Redux
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { selectIsAuthenticated, selectIsLoading } from '../redux/slices/authSlice';
+
+// Import the new AuthenticatedAppWrapper component
+import AuthenticatedAppWrapper from '../components/AuthenticatedAppWrapper';
 
 // Auth Screens
 import LoginScreen from '../screens/auth/LoginScreen';
@@ -99,11 +104,56 @@ const TabNavigator = () => {
   );
 };
 
-// Main App Navigator
-const AppNavigator = () => {
-  const { userToken, isLoading } = useAuth();
+// Authenticated Stack Navigator
+const AuthenticatedStackNavigator = () => {
   const { t } = useTranslation();
   const { headerColor } = useTheme();
+  
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: headerColor,
+          shadowOffset: { height: 0, width: 0 },
+          shadowOpacity: 0,
+          elevation: 0,
+          borderBottomWidth: 0,
+        },
+        headerTintColor: '#fff',
+        headerTitleAlign: 'center',
+      }}
+    >
+      <Stack.Screen 
+        name="Main" 
+        component={TabNavigator} 
+        options={{ headerShown: false }} 
+      />
+      <Stack.Screen 
+        name="Chat" 
+        component={ChatScreen} 
+        options={({ route }) => ({ 
+          title: route.params?.contactName || t('messages.title'),
+        })} 
+      />
+      <Stack.Screen 
+        name="AddContact" 
+        component={AddContactScreen} 
+        options={{ title: t('contacts.addContact') }} 
+      />
+      <Stack.Screen 
+        name="EditContact" 
+        component={EditContactScreen} 
+        options={{ title: t('contacts.editContact') }} 
+      />
+    </Stack.Navigator>
+  );
+};
+
+// Main App Navigator
+const AppNavigator = () => {
+  // Get authentication state from Redux via the context bridge
+  const { isLoading } = useAuth();
+  const isAuthenticated = useSelector(selectIsAuthenticated);
 
   // Show loading screen if auth is loading
   if (isLoading) {
@@ -112,54 +162,17 @@ const AppNavigator = () => {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator
-        screenOptions={{
-          headerStyle: {
-            backgroundColor: headerColor,
-            shadowOffset: { height: 0, width: 0 },
-            shadowOpacity: 0,
-            elevation: 0,
-            borderBottomWidth: 0,
-          },
-          headerTintColor: '#fff',
-          headerTitleAlign: 'center',
-        }}
-      >
-        {userToken == null ? (
-          // Auth screens
-          <Stack.Screen 
-            name="Auth" 
-            component={AuthNavigator} 
-            options={{ headerShown: false }} 
-          />
-        ) : (
-          // App screens
-          <>
-            <Stack.Screen 
-              name="Main" 
-              component={TabNavigator} 
-              options={{ headerShown: false }} 
-            />
-            <Stack.Screen 
-              name="Chat" 
-              component={ChatScreen} 
-              options={({ route }) => ({ 
-                title: route.params?.contactName || t('messages.title'),
-              })} 
-            />
-            <Stack.Screen 
-              name="AddContact" 
-              component={AddContactScreen} 
-              options={{ title: t('contacts.addContact') }} 
-            />
-            <Stack.Screen 
-              name="EditContact" 
-              component={EditContactScreen} 
-              options={{ title: t('contacts.editContact') }} 
-            />
-          </>
-        )}
-      </Stack.Navigator>
+      {!isAuthenticated ? (
+        // Auth screens - wrapped in a Stack.Navigator
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Auth" component={AuthNavigator} />
+        </Stack.Navigator>
+      ) : (
+        // Authenticated app with socket connection
+        <AuthenticatedAppWrapper>
+          <AuthenticatedStackNavigator />
+        </AuthenticatedAppWrapper>
+      )}
     </NavigationContainer>
   );
 };

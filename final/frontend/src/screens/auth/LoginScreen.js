@@ -15,13 +15,14 @@ import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useOrientation } from '../../hooks/useOrientation';
+import { useGlobalOrientation } from '../../contexts/OrientationContext';
 
 const LoginScreen = ({ navigation }) => {
   const { t } = useTranslation();
   const { headerColor } = useTheme();
   const { login, isLoading } = useAuth();
-  const { isPortrait } = useOrientation();
+  // Use the global orientation hook with shared values
+  const { isPortrait } = useGlobalOrientation();
   
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');

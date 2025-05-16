@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContainer: {
-    padding: 20,
+    
   },
   avatarContainer: {
     alignItems: 'center',

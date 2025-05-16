@@ -2,25 +2,62 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useTheme } from '../contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
-import { useMessages } from '../contexts/MessagesContext';
+import { useDispatch } from 'react-redux';
 
-const MessageBubble = ({ message, isOwn }) => {
+const MessageBubble = (props) => {
+  const { item, message, userId, contactDetails, isOwn: propIsOwn } = props;
   const { headerColor } = useTheme();
-  const { sendMessage } = useMessages();
+  const dispatch = useDispatch();
+  
+  // Use either the item prop or message prop (for backward compatibility)
+  const messageData = item || message;
+  
+  // Safety check - if no message data, don't render
+  if (!messageData) {
+    console.warn('[MESSAGE-BUBBLE] No message data provided', props);
+    return null;
+  }
+  
+  // If isOwn is not directly provided, determine it from userId
+  const isOwn = propIsOwn !== undefined ? 
+    propIsOwn : 
+    (messageData.sender_id && userId) ? 
+      messageData.sender_id.toString() === userId.toString() : 
+      false;
   
   // Format timestamp
   const formatTime = (timestamp) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (!timestamp) return '';
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      console.error('[MESSAGE-BUBBLE] Error formatting time:', e);
+      return '';
+    }
   };
+  
+  // Safe property getters with default values
+  const getContent = () => messageData.content || '';
+  const getTimestamp = () => messageData.timestamp || '';
+  const isSending = () => messageData.sending === true;
+  const hasFailed = () => messageData.delivery_failed === true;
   
   // Handle retry for failed messages
   const handleRetry = async () => {
-    if (!message.receiver_id || !message.content) return;
+    if (!messageData.receiver_id || !messageData.content) return;
     
     try {
-      await sendMessage(message.receiver_id, message.content);
-      // The message will be automatically updated through the MessagesContext
+      // Dispatch message retry via Redux
+      dispatch({ 
+        type: 'socket/sendMessage', 
+        payload: { 
+          receiverId: messageData.receiver_id, 
+          content: messageData.content,
+          contactId: contactDetails?.id || null,
+          tempId: `retry-${Date.now()}`
+        } 
+      });
     } catch (error) {
       console.error('[MESSAGE-BUBBLE] Failed to retry sending message:', error);
     }
@@ -34,16 +71,16 @@ const MessageBubble = ({ message, isOwn }) => {
       <View style={[
         styles.bubble,
         isOwn ? [styles.ownBubble, { backgroundColor: headerColor }] : styles.otherBubble,
-        message.delivery_failed && styles.failedBubble
+        hasFailed() && styles.failedBubble
       ]}>
         <Text style={[
           styles.text,
           isOwn ? styles.ownText : styles.otherText
         ]}>
-          {message.content}
+          {getContent()}
         </Text>
         <View style={styles.footerRow}>
-          {message.sending && (
+          {isSending() && (
             <View style={styles.sendingContainer}>
               <ActivityIndicator size="small" color={isOwn ? "white" : headerColor} />
               <Text style={[
@@ -55,7 +92,7 @@ const MessageBubble = ({ message, isOwn }) => {
             </View>
           )}
           
-          {message.delivery_failed && (
+          {hasFailed() && (
             <View style={styles.errorContainer}>
               <Ionicons name="alert-circle" size={14} color="#FF3B30" />
               <Text style={styles.errorText}>
@@ -72,7 +109,7 @@ const MessageBubble = ({ message, isOwn }) => {
             styles.timestamp,
             isOwn ? styles.ownTimestamp : styles.otherTimestamp
           ]}>
-            {formatTime(message.timestamp)}
+            {formatTime(getTimestamp())}
           </Text>
         </View>
       </View>

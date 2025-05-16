@@ -3,7 +3,9 @@ import { io } from 'socket.io-client';
 import { Platform } from 'react-native';
 
 // API base URL - change to your backend server URL
-const API_URL = 'http://10.16.11.9:3000/api';  // Replace 192.168.1.X with your actual machine's IP address
+// Using 10.16.11.9 from the error logs instead of 192.168.1.10
+const API_URL = 'http://192.168.1.10:3000';  // Remove /api from the URL for socket.io
+const API_ENDPOINT = `${API_URL}/api`;  // Keep the /api for REST endpoints
 
 // Headers with authentication token
 const getHeaders = async () => {
@@ -34,11 +36,8 @@ export const initSocket = async (userId) => {
     const token = await AsyncStorage.getItem('userToken');
     console.log('[SOCKET] Using auth token:', token ? 'Token exists' : 'No token');
     
-    // Import socket.io-client dynamically to handle Web/Native environments
-    const io = require('socket.io-client');
-    
-    // Create new socket connection
-    socket = io(API_URL, {
+    // Create new socket connection to root URL, not to /api path
+    socket = io(API_URL, {  // Use root URL without /api
       auth: {
         token: token
       },
@@ -54,11 +53,11 @@ export const initSocket = async (userId) => {
       // Register socket for user ID
       if (userId) {
         console.log('[SOCKET] Registering user ID:', userId);
-        socket.emit('register', { userId: userId });
+        socket.emit('register', userId);
       }
     });
     
-    socket.on('registered', (data) => {
+    socket.on('register_success', (data) => {
       console.log('[SOCKET] Successfully registered socket for user:', data.userId);
       socketInitialized = true;
     });
@@ -105,7 +104,7 @@ export const getSocket = () => {
 export const authAPI = {
   login: async (credentials) => {
     try {
-      const response = await fetch(`${API_URL}/users/login`, {
+      const response = await fetch(`${API_ENDPOINT}/users/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -149,7 +148,7 @@ export const authAPI = {
       delete userDataForRegistration.avatar_uri;
 
       // First register the user
-      const response = await fetch(`${API_URL}/users/register`, {
+      const response = await fetch(`${API_ENDPOINT}/users/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -212,7 +211,7 @@ export const authAPI = {
   getCurrentUser: async () => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/users/me`, {
+      const response = await fetch(`${API_ENDPOINT}/users/me`, {
         method: 'GET',
         headers,
       });
@@ -233,7 +232,7 @@ export const authAPI = {
   updateProfile: async (profileData) => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/users/me`, {
+      const response = await fetch(`${API_ENDPOINT}/users/me`, {
         method: 'PUT',
         headers,
         body: JSON.stringify(profileData),
@@ -257,8 +256,22 @@ export const authAPI = {
     console.log('[API] Image URI:', imageUri);
     
     try {
-      // 1. Verify the image file exists
-      const FileSystem = require('expo-file-system');
+      // Make FileSystem require safe
+      let FileSystem = null;
+      try {
+        FileSystem = require('expo-file-system');
+      } catch (error) {
+        console.error('[API] Error loading expo-file-system:', error);
+      }
+
+      // Make ImageManipulator require safe
+      let ImageManipulator = null;
+      try {
+        ImageManipulator = require('expo-image-manipulator');
+      } catch (error) {
+        console.error('[API] Error loading expo-image-manipulator:', error);
+      }
+      
       let fileInfo;
       
       try {
@@ -281,9 +294,6 @@ export const authAPI = {
           
           // We'll use expo-image-manipulator to resize if it's available
           try {
-            const ImageManipulator = require('expo-image-manipulator');
-            
-            // Resize the image to reduce file size
             const manipResult = await ImageManipulator.manipulateAsync(
               imageUri,
               [{ resize: { width: 500 } }], // Reduce to 500px width max
@@ -314,30 +324,53 @@ export const authAPI = {
       }
       
       // 3. Extract filename from URI
-      const uriParts = imageUri.split('/');
-      const filename = uriParts[uriParts.length - 1] || 'photo.jpg';
+      let filename = 'photo.jpg'; // Default filename
+      try {
+        if (imageUri && typeof imageUri === 'string') {
+          const uriParts = imageUri.split('/');
+          if (uriParts && uriParts.length > 0) {
+            const lastPart = uriParts[uriParts.length - 1];
+            if (lastPart) filename = lastPart;
+          }
+        }
+      } catch (error) {
+        console.log('[API] Error extracting filename:', error);
+        // Continue with default filename
+      }
       console.log('[API] Filename:', filename);
       
       // 4. Determine MIME type based on file extension
-      const extension = filename.split('.').pop().toLowerCase();
-      let mimeType;
+      let extension = 'jpg'; // Default extension
+      let mimeType = 'image/jpeg'; // Default MIME type
       
-      switch (extension) {
-        case 'jpg':
-        case 'jpeg':
-          mimeType = 'image/jpeg';
-          break;
-        case 'png':
-          mimeType = 'image/png';
-          break;
-        case 'gif':
-          mimeType = 'image/gif';
-          break;
-        case 'webp':
-          mimeType = 'image/webp';
-          break;
-        default:
-          mimeType = 'image/jpeg'; // Default to jpeg
+      try {
+        if (filename && typeof filename === 'string' && filename.includes('.')) {
+          const parts = filename.split('.');
+          if (parts && parts.length > 1) {
+            extension = parts[parts.length - 1].toLowerCase();
+          }
+        }
+        
+        switch (extension) {
+          case 'jpg':
+          case 'jpeg':
+            mimeType = 'image/jpeg';
+            break;
+          case 'png':
+            mimeType = 'image/png';
+            break;
+          case 'gif':
+            mimeType = 'image/gif';
+            break;
+          case 'webp':
+            mimeType = 'image/webp';
+            break;
+          default:
+            mimeType = 'image/jpeg'; // Default to jpeg
+        }
+      } catch (error) {
+        console.log('[API] Error determining MIME type:', error);
+        // Continue with default MIME type
       }
       
       console.log('[API] MIME type:', mimeType);
@@ -372,7 +405,7 @@ export const authAPI = {
       console.log('[API] FormData created with avatar field');
       
       // 8. Log API endpoint
-      const endpoint = `${API_URL}/users/avatar`;
+      const endpoint = `${API_ENDPOINT}/users/avatar`;
       console.log('[API] Making request to:', endpoint);
       
       // 9. Make the request WITHOUT setting Content-Type header (crucial)
@@ -418,7 +451,7 @@ export const authAPI = {
   getUserAvatar: async (userId) => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/users/${userId}/avatar`, {
+      const response = await fetch(`${API_ENDPOINT}/users/${userId}/avatar`, {
         method: 'GET',
         headers,
       });
@@ -439,7 +472,13 @@ export const authAPI = {
         const reader = new FileReader();
         reader.onloadend = () => {
           const base64data = reader.result;
-          resolve(base64data.split(',')[1]); // Remove the data:image/jpeg;base64, part
+          if (base64data && typeof base64data === 'string' && base64data.includes(',')) {
+            // Extract the actual base64 part after the comma
+            resolve(base64data.split(',')[1]); // Remove the data:image/jpeg;base64, part
+          } else {
+            console.log('[API] Invalid base64 data format');
+            resolve(null);
+          }
         };
         reader.onerror = () => {
           // On error, silently return null instead of rejecting
@@ -462,7 +501,7 @@ export const authAPI = {
   findUserByPhoneNumber: async (phoneNumber) => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/users/findByPhone/${phoneNumber}`, {
+      const response = await fetch(`${API_ENDPOINT}/users/findByPhone/${phoneNumber}`, {
         method: 'GET',
         headers,
       });
@@ -490,7 +529,7 @@ export const authAPI = {
   checkPhoneAvailability: async (phoneNumber) => {
     try {
       // This endpoint doesn't require authentication
-      const response = await fetch(`${API_URL}/users/checkPhoneAvailability/${phoneNumber}`, {
+      const response = await fetch(`${API_ENDPOINT}/users/checkPhoneAvailability/${phoneNumber}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -517,7 +556,7 @@ export const contactsAPI = {
   getAllContacts: async () => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/contacts`, {
+      const response = await fetch(`${API_ENDPOINT}/contacts`, {
         method: 'GET',
         headers,
       });
@@ -538,7 +577,7 @@ export const contactsAPI = {
   getContactById: async (contactId) => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/contacts/${contactId}`, {
+      const response = await fetch(`${API_ENDPOINT}/contacts/${contactId}`, {
         method: 'GET',
         headers,
       });
@@ -559,7 +598,7 @@ export const contactsAPI = {
   createContact: async (contactData) => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/contacts`, {
+      const response = await fetch(`${API_ENDPOINT}/contacts`, {
         method: 'POST',
         headers,
         body: JSON.stringify(contactData),
@@ -581,7 +620,7 @@ export const contactsAPI = {
   updateContact: async (contactId, contactData) => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/contacts/${contactId}`, {
+      const response = await fetch(`${API_ENDPOINT}/contacts/${contactId}`, {
         method: 'PUT',
         headers,
         body: JSON.stringify(contactData),
@@ -603,7 +642,7 @@ export const contactsAPI = {
   deleteContact: async (contactId) => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/contacts/${contactId}`, {
+      const response = await fetch(`${API_ENDPOINT}/contacts/${contactId}`, {
         method: 'DELETE',
         headers,
       });
@@ -624,7 +663,7 @@ export const contactsAPI = {
   blockContact: async (contactId) => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/contacts/${contactId}/block`, {
+      const response = await fetch(`${API_ENDPOINT}/contacts/${contactId}/block`, {
         method: 'POST',
         headers,
       });
@@ -645,7 +684,7 @@ export const contactsAPI = {
   unblockContact: async (contactId) => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/contacts/${contactId}/unblock`, {
+      const response = await fetch(`${API_ENDPOINT}/contacts/${contactId}/unblock`, {
         method: 'POST',
         headers,
       });
@@ -669,7 +708,7 @@ export const messagesAPI = {
   getConversation: async (contactId) => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/messages/conversation/${contactId}`, {
+      const response = await fetch(`${API_ENDPOINT}/messages/conversation/${contactId}`, {
         method: 'GET',
         headers,
       });
@@ -691,7 +730,7 @@ export const messagesAPI = {
     try {
       console.log('[API] Sending message to receiverId:', receiverId);
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/messages/send`, {
+      const response = await fetch(`${API_ENDPOINT}/messages/send`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ receiverId, content }),
@@ -753,7 +792,7 @@ export const messagesAPI = {
   getUnreadCount: async () => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/messages/unread/count`, {
+      const response = await fetch(`${API_ENDPOINT}/messages/unread/count`, {
         method: 'GET',
         headers,
       });
@@ -774,7 +813,7 @@ export const messagesAPI = {
   getUnreadMessages: async () => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/messages/unread`, {
+      const response = await fetch(`${API_ENDPOINT}/messages/unread`, {
         method: 'GET',
         headers,
       });
@@ -795,7 +834,7 @@ export const messagesAPI = {
   deleteConversation: async (contactId) => {
     try {
       const headers = await getHeaders();
-      const response = await fetch(`${API_URL}/messages/conversation/${contactId}`, {
+      const response = await fetch(`${API_ENDPOINT}/messages/conversation/${contactId}`, {
         method: 'DELETE',
         headers,
       });

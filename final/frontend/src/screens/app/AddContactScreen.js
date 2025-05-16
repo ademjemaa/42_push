@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Avatar from '../../components/Avatar';
 import { authAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
-import contactsService from '../../services/contactsService';
+import { useGlobalOrientation } from '../../contexts/OrientationContext';
 
 const AddContactScreen = ({ navigation }) => {
   const { t } = useTranslation();
@@ -149,11 +149,7 @@ const AddContactScreen = ({ navigation }) => {
     }
     
     try {
-      // Clean up deleted contacts cache for this phone number
-      // to avoid conflicts with previously deleted contacts
-      await contactsService.cleanupDeletedContactsByPhone(phoneNumber);
-      
-      // Check if contact already exists (after cleaning up cache)
+      // Check if contact already exists
       const existingContact = findContactByPhoneNumber(phoneNumber);
       if (existingContact) {
         Alert.alert(t('common.error'), t('contacts.phoneExists'));

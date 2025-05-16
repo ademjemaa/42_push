@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,30 +14,40 @@ import {
   AppState
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTheme } from '../../contexts/ThemeContext';
-import { useMessages } from '../../contexts/MessagesContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { useContacts } from '../../contexts/ContactsContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MessageBubble from '../../components/MessageBubble';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
 import { useGlobalOrientation } from '../../contexts/OrientationContext';
+import contactsService from '../../services/contactsService';
+import {
+  fetchConversation as fetchConversationAction,
+  sendMessage,
+  selectConversation,
+  selectMessagesStatus,
+  selectMessagesError,
+  markAsReadAction
+} from '../../redux/slices/messagesSlice';
+import {
+  getContactById as getContactByIdAction,
+  selectContactById
+} from '../../redux/slices/contactsSlice';
 
 const ChatScreen = ({ route, navigation }) => {
   const { contactId, contactName } = route.params;
   const { t } = useTranslation();
   const { headerColor } = useTheme();
   const { userId } = useAuth();
-  const { contacts, getContactById } = useContacts();
-  const { 
-    fetchConversation, 
-    sendMessage, 
-    getCachedConversation,
-    isLoading,
-    conversations 
-  } = useMessages();
   const { isPortrait } = useGlobalOrientation();
+  const dispatch = useDispatch();
+  
+  // Redux selectors at the top level
+  const isLoading = useSelector(state => selectMessagesStatus(state) === 'loading');
+  const error = useSelector(selectMessagesError);
+  const currentConversation = useSelector(state => selectConversation(state, contactId));
   
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState('');
@@ -45,6 +55,10 @@ const ChatScreen = ({ route, navigation }) => {
   const [contactDetails, setContactDetails] = useState(null);
   const [contactNotFound, setContactNotFound] = useState(false);
   const isMounted = React.useRef(true);
+  const messagesMarkedAsRead = React.useRef(false);
+  
+  // Track last load time to prevent excessive API calls
+  const lastLoadTime = useRef(0);
   
   // Handle navigation away from deleted contacts
   useEffect(() => {
@@ -63,39 +77,25 @@ const ChatScreen = ({ route, navigation }) => {
     };
   }, [contactNotFound, navigation]);
   
-  // Load contact details and debug IDs
+  // Load contact details
   useEffect(() => {
     // Skip loading if we already know the contact doesn't exist
     if (contactNotFound) {
-      console.log('[CHAT-DEBUG] Skipping contact info load: contact no longer exists');
       return;
     }
     
     const loadContactInfo = async () => {
-      console.log('[CHAT-DEBUG] ======= CHAT INITIALIZATION =======');
-      console.log('[CHAT-DEBUG] Current user ID:', userId);
-      console.log('[CHAT-DEBUG] Contact ID from route params:', contactId);
-      console.log('[CHAT-DEBUG] Contact name from route params:', contactName);
-      
       try {
-        // Get full contact details to extract the actual user_id this contact represents
-        const contactInfo = await getContactById(contactId);
+        // Get full contact details using Redux action
+        const contactInfo = await dispatch(getContactByIdAction(contactId)).unwrap();
         
         if (!contactInfo) {
-          console.log('[CHAT-DEBUG] Contact not found, redirecting to contacts list');
+          console.log('[CHAT] Contact not found, redirecting to contacts list');
           setContactNotFound(true);
           return;
         }
         
         setContactDetails(contactInfo);
-        console.log('[CHAT-DEBUG] Contact info loaded:', JSON.stringify(contactInfo));
-        
-        // Check if avatar exists and log it
-        if (contactInfo.avatar) {
-          console.log('[CHAT-DEBUG] Contact has avatar (length):', contactInfo.avatar.length);
-        } else {
-          console.log('[CHAT-DEBUG] Contact has no avatar');
-        }
         
         // Update navigation options with latest contact info
         navigation.setOptions({
@@ -119,160 +119,101 @@ const ChatScreen = ({ route, navigation }) => {
             </TouchableOpacity>
           ),
         });
-        
-        console.log('[CHAT-DEBUG] Contact record ID:', contactInfo.id);
-        
-        // The contact_user_id represents the actual user this contact refers to
-        // This is different from user_id which is who owns this contact
-        const actualUserId = contactInfo.contact_user_id;
-        console.log('[CHAT-DEBUG] Contact represents actual user_id:', actualUserId);
-        console.log('[CHAT-DEBUG] Contact belongs to user_id:', contactInfo.user_id);
-        console.log('[CHAT-DEBUG] Contact phone number:', contactInfo.phone_number);
-        
-        // Find all contacts that might represent the same user
-        const matchingContacts = contacts.filter(c => 
-          c.phone_number === contactInfo.phone_number && c.id !== contactInfo.id
-        );
-        
-        if (matchingContacts.length > 0) {
-          console.log('[CHAT-DEBUG] Found other contacts with same phone number:', 
-            matchingContacts.map(c => `ID: ${c.id}, Name: ${c.nickname || c.phone_number}`).join(', ')
-          );
-        }
       } catch (error) {
-        // Only log as error if it's not a "contact not found" error
         if (error && error.message && error.message.toLowerCase().includes('not found')) {
-          console.log('[CHAT-DEBUG] Contact was deleted, setting contactNotFound flag');
+          console.log('[CHAT] Contact was deleted, setting contactNotFound flag');
         } else {
-          console.error('[CHAT-DEBUG] Error getting contact details:', error);
+          console.error('[CHAT] Error getting contact details:', error);
         }
         setContactNotFound(true);
       }
     };
     
     loadContactInfo();
-  }, [contactId, userId, contacts, route.params?.updateTimestamp, contactNotFound]);
+  }, [contactId, userId, route.params?.updateTimestamp, contactNotFound, dispatch]);
   
-  // Monitor conversations context for real-time updates
+  // Memoize the fallback conversation to avoid creating new references
+  const fallbackConversation = useMemo(() => {
+    if (!contactDetails || !contactDetails.contact_user_id) return null;
+    
+    // This will only be computed when contactDetails changes
+    const actualUserId = contactDetails.contact_user_id.toString();
+    return actualUserId;
+  }, [contactDetails]);
+  
+  // Separate selector for fallback conversation
+  const fallbackMessages = useSelector(state => 
+    fallbackConversation ? selectConversation(state, fallbackConversation) : []
+  );
+  
+  // Update messages when conversations change
   useEffect(() => {
-    // For direct monitoring of the current contactId conversation
-    const currentContactConversation = conversations[contactId];
-    if (currentContactConversation && currentContactConversation.length > 0) {
-      console.log('[CHAT] Found direct messages using contactId:', contactId);
-      console.log('[CHAT] Updating messages from context, count:', currentContactConversation.length);
-      setMessages(currentContactConversation);
-      return;
+    if (currentConversation && currentConversation.length > 0) {
+      // Sort messages by timestamp in descending order for the inverted FlatList
+      const sortedMessages = [...currentConversation].sort((a, b) => 
+        new Date(b.timestamp) - new Date(a.timestamp)
+      );
+      setMessages(sortedMessages);
+    } else if (fallbackMessages && fallbackMessages.length > 0) {
+      // Sort messages by timestamp in descending order for the inverted FlatList
+      const sortedMessages = [...fallbackMessages].sort((a, b) => 
+        new Date(b.timestamp) - new Date(a.timestamp)
+      );
+      setMessages(sortedMessages);
     }
-    
-    // Fallback: Try to find the conversation using contact_user_id if we have contact details
-    if (contactDetails && contactDetails.contact_user_id) {
-      const actualUserId = contactDetails.contact_user_id.toString();
-      
-      // Look for any conversations that might match this actual user ID
-      let updatedMessages = null;
-      
-      // First check if we have messages in conversations by this user's actual ID
-      if (conversations[actualUserId] && conversations[actualUserId].length > 0) {
-        updatedMessages = conversations[actualUserId];
-        console.log('[CHAT] Found messages using actualUserId:', actualUserId);
-      }
-      
-      if (updatedMessages && updatedMessages.length > 0) {
-        console.log('[CHAT] Updating messages from context, count:', updatedMessages.length);
-        setMessages(updatedMessages);
-      }
-    }
-  }, [conversations, contactId, contactDetails]);
+  }, [currentConversation, fallbackMessages]);
   
-  // Load messages from API (modified to handle contact not found)
-  const loadMessages = async () => {
-    console.log('[CHAT] Loading messages for contact ID:', contactId);
-    
+  // Load messages from API
+  const loadMessages = useCallback(async () => {
     // Don't try to load messages if contact not found
     if (contactNotFound) {
-      console.log('[CHAT] Contact not found, skipping message load');
       return [];
     }
     
+    // Prevent too frequent API calls (minimum 2 seconds between loads)
+    const now = Date.now();
+    if (now - lastLoadTime.current < 2000) {
+      console.log('[CHAT] Skipping load, too soon since last load');
+      return;
+    }
+    
+    lastLoadTime.current = now;
+    
     try {
-      // First check if the contact still exists using the service
+      // First check if the contact still exists
       try {
-        const contactsService = require('../../services/contactsService');
         const exists = await contactsService.checkContactExists(contactId);
         
         if (!exists) {
-          console.log('[CHAT] Contact no longer exists, setting contactNotFound flag');
           setContactNotFound(true);
           return [];
         }
       } catch (checkError) {
-        // Don't log as error - just set contactNotFound
-        console.log('[CHAT] Error checking if contact exists, assuming deleted');
         setContactNotFound(true);
         return [];
       }
       
-      // First try to get cached messages for immediate display
-      const cached = getCachedConversation(contactId);
-      if (cached && cached.length > 0) {
-        console.log('[CHAT] Using cached messages initially, count:', cached.length);
-        setMessages(cached);
-      } else {
-        console.log('[CHAT] No cached messages found');
-      }
+      // Fetch fresh messages from the server via Redux action
+      await dispatch(fetchConversationAction(contactId)).unwrap();
       
-      // Always fetch fresh messages from the server
-      console.log('[CHAT] Fetching latest messages from API');
-      
-      try {
-        const fetchedMessages = await fetchConversation(contactId);
-        
-        // Check if the component is still mounted before updating state
-        if (isMounted.current) {
-          console.log('[CHAT] Messages fetched successfully, count:', fetchedMessages.length);
-          
-          // Debug message IDs and participants
-          if (fetchedMessages.length > 0) {
-            const latestMsg = fetchedMessages[fetchedMessages.length - 1];
-            console.log(`[CHAT-DEBUG] Latest message: ID ${latestMsg.id}, From: ${latestMsg.sender_id}, Content: "${latestMsg.content.substring(0, 20)}${latestMsg.content.length > 20 ? '...' : ''}"`);
-          }
-          
-          // Set the messages
-          setMessages(fetchedMessages);
-        }
-        
-        return fetchedMessages;
-      } catch (error) {
-        // Only log as error if it's not a "contact not found" error
-        if (error.message && (
-            error.message.includes('Contact not found') || 
-            error.message.includes('not found')
-        )) {
-          console.log('[CHAT] Contact was deleted, setting contactNotFound flag');
-          setContactNotFound(true);
-        } else {
-          console.error('[CHAT] Error fetching messages:', error);
-        }
-        
-        return []; // Return empty array instead of rethrowing
-      }
+      // Don't need to set messages here as useEffect will handle it when Redux state updates
+      return true;
     } catch (error) {
-      // Only log as error if it's not a "contact not found" error
-      if (error.message && error.message.toLowerCase().includes('not found')) {
-        console.log('[CHAT] Contact was deleted, setting contactNotFound flag');
+      if (error.message && (
+          error.message.includes('Contact not found') || 
+          error.message.includes('not found')
+      )) {
         setContactNotFound(true);
       } else {
-        console.error('[CHAT] Error loading messages:', error);
+        console.error('[CHAT] Error fetching messages:', error);
       }
       
-      return []; // Return empty array instead of rethrowing
+      return false;
     }
-  };
+  }, [contactId, contactNotFound, dispatch]);
   
   // Load conversation on component mount and set title
   useEffect(() => {
-    console.log('[CHAT] Setting up ChatScreen for contact ID:', contactId);
-    
     // Setup header immediately with basic info and custom back button
     navigation.setOptions({
       title: contactName,
@@ -302,61 +243,30 @@ const ChatScreen = ({ route, navigation }) => {
       loadMessages();
     }
     
-    // Set up auto-refresh that checks if we still have a valid contact
-    let refreshInterval;
-    
-    // Only set up auto-refresh if we have a valid contact
-    if (!contactNotFound) {
-      refreshInterval = setInterval(() => {
-        // Skip refresh if contact is known to be deleted or component is unmounted
-        if (contactNotFound || !isMounted.current) {
-          console.log('[CHAT] Skipping auto-refresh: contact no longer exists or component unmounted');
-          if (refreshInterval) {
-            clearInterval(refreshInterval);
-            refreshInterval = null;
-          }
-          return;
-        }
-        
-        console.log('[CHAT] Auto-refreshing messages');
-        
-        // Use a try/catch to prevent unhandled promise rejections
-        try {
-          fetchConversation(contactId)
-            .then(fetchedMessages => {
-              if (fetchedMessages && fetchedMessages.length > 0) {
-                console.log('[CHAT] Auto-refresh found', fetchedMessages.length, 'messages');
-                if (isMounted.current) {
-                  setMessages(fetchedMessages);
-                }
-              }
-            })
-            .catch(error => {
-              console.error('[CHAT] Auto-refresh error:', error);
-              // Check if the error is because contact doesn't exist
-              if (error.message && error.message.includes('not found')) {
-                console.log('[CHAT] Contact was deleted, setting contactNotFound flag');
-                setContactNotFound(true);
-                // Clean up the interval immediately
-                if (refreshInterval) {
-                  clearInterval(refreshInterval);
-                  refreshInterval = null;
-                }
-              }
-            });
-        } catch (error) {
-          console.error('[CHAT] Error in auto-refresh:', error);
-        }
-      }, 5000); // Refresh every 5 seconds
-    }
-    
-    // Clean up the interval when component unmounts
+    // Clean up when component unmounts
     return () => {
-      console.log('[CHAT] Cleaning up auto-refresh interval');
       isMounted.current = false;
-      if (refreshInterval) clearInterval(refreshInterval);
     };
-  }, [contactId, contactNotFound]);
+  }, [contactId, contactNotFound, contactName, navigation, loadMessages]);
+  
+  // Screen focus effect to refresh messages
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      // Only load if mounted and contact exists
+      if (isMounted.current && !contactNotFound) {
+        // Use the same throttling here
+        const now = Date.now();
+        if (now - lastLoadTime.current >= 2000) {
+          console.log('[CHAT] Screen focused, loading messages');
+        loadMessages();
+        } else {
+          console.log('[CHAT] Screen focused, but skipping load (too soon)');
+        }
+      }
+    });
+    
+    return unsubscribe;
+  }, [navigation, contactNotFound, loadMessages]);
   
   // Handle hardware back button
   useEffect(() => {
@@ -370,25 +280,20 @@ const ChatScreen = ({ route, navigation }) => {
   }, [navigation]);
   
   // Refresh messages
-  const handleRefresh = async () => {
-    console.log('[CHAT] Manually refreshing messages');
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadMessages();
     setRefreshing(false);
-  };
+  }, [loadMessages]);
   
   // Send a message
-  const handleSendMessage = async () => {
+  const handleSendMessage = useCallback(async () => {
     if (!messageText.trim()) {
-      console.log('[CHAT] Attempted to send empty message, ignoring');
       return;
     }
     
-    console.log('[CHAT] Sending message to contact ID:', contactId);
-    console.log('[CHAT] Message content:', messageText);
-    
     if (!contactDetails) {
-      console.error('[CHAT-ERROR] Cannot send message - missing contact details');
+      console.error('[CHAT] Cannot send message - missing contact details');
       return;
     }
     
@@ -397,22 +302,19 @@ const ChatScreen = ({ route, navigation }) => {
     const actualRecipientId = contactDetails.contact_user_id;
     
     if (!actualRecipientId) {
-      console.error('[CHAT-ERROR] Cannot send message - contact is not linked to a real user ID');
+      console.error('[CHAT] Cannot send message - contact is not linked to a real user ID');
       Alert.alert(t('messages.cannotSend'), t('messages.noRegisteredUser'));
       return;
     }
-    
-    // Debug: Log the actual user ID we're sending to
-    console.log('[CHAT-DEBUG] Sending message to contact_id:', contactId);
-    console.log('[CHAT-DEBUG] This contact represents actual user_id:', actualRecipientId);
     
     // Store current message text and clear the input
     const currentMessage = messageText;
     setMessageText('');
     
     // Add optimistic message to the UI immediately
+    const tempId = `temp-${Date.now()}`;
     const tempMessage = {
-      id: `temp-${Date.now()}`,
+      id: tempId,
       sender_id: userId,
       receiver_id: actualRecipientId,
       content: currentMessage,
@@ -425,19 +327,18 @@ const ChatScreen = ({ route, navigation }) => {
     setMessages(prev => [...prev, tempMessage]);
     
     try {
-      console.log('[CHAT-DEBUG] Using recipient user ID for message:', actualRecipientId);
+      // Use socket middleware to send message
+      dispatch({ 
+        type: 'socket/sendMessage', 
+        payload: { 
+          receiverId: actualRecipientId, 
+          content: currentMessage,
+          contactId: contactId,
+          tempId // Pass the temp ID to help with mapping in the reducer
+        } 
+      });
       
-      const result = await sendMessage(actualRecipientId, currentMessage);
-      console.log('[CHAT] Message sent successfully, result:', JSON.stringify(result));
-      
-      // Update the temp message with the real message ID
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === tempMessage.id 
-            ? { ...result, sending: false } 
-            : msg
-        )
-      );
+      // The socket middleware will handle the rest and update Redux state
     } catch (error) {
       console.error('[CHAT] Failed to send message:', error);
       
@@ -450,160 +351,108 @@ const ChatScreen = ({ route, navigation }) => {
         )
       );
       
-      Alert.alert(t('messages.messageFailed'), t('messages.messageSavedAsDraft'));
+      // Show error to user
+      Alert.alert(
+        t('messages.failed'),
+        error.message || t('messages.genericError')
+      );
     }
-  };
+  }, [messageText, contactDetails, userId, dispatch, t, contactId]);
   
   // Group messages by date
-  const groupMessagesByDate = () => {
-    const groups = {};
+  const groupMessagesByDate = useCallback((messagesToGroup) => {
+    const grouped = {};
     
-    messages.forEach(message => {
+    messagesToGroup.forEach(message => {
       const date = new Date(message.timestamp);
-      const dateString = date.toDateString();
+      const dateStr = formatDate(message.timestamp);
       
-      if (!groups[dateString]) {
-        groups[dateString] = [];
+      if (!grouped[dateStr]) {
+        grouped[dateStr] = [];
       }
       
-      groups[dateString].push(message);
+      grouped[dateStr].push(message);
     });
     
     // Convert to array for FlatList
-    const result = [];
-    
-    Object.keys(groups).forEach(date => {
-      result.push({
-        type: 'date',
-        date,
-      });
-      
-      groups[date].forEach(message => {
-        result.push({
-          type: 'message',
-          ...message,
-        });
-      });
-    });
-    
-    return result;
-  };
+    return Object.keys(grouped).map(date => ({
+      title: date,
+      data: grouped[date],
+    }));
+  }, []);
   
-  // Format date for display
-  const formatDate = (dateString) => {
-    const today = new Date().toDateString();
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayString = yesterday.toDateString();
+  // Format date for section headers
+  const formatDate = useCallback((dateString) => {
+    const now = new Date();
+    const date = new Date(dateString);
     
-    if (dateString === today) {
+    const isToday = date.getDate() === now.getDate() &&
+      date.getMonth() === now.getMonth() &&
+      date.getFullYear() === now.getFullYear();
+    
+    if (isToday) {
       return t('messages.today');
-    } else if (dateString === yesterdayString) {
+    }
+    
+    const isYesterday = date.getDate() === now.getDate() - 1 &&
+      date.getMonth() === now.getMonth() &&
+      date.getFullYear() === now.getFullYear();
+    
+    if (isYesterday) {
       return t('messages.yesterday');
-    } else {
-      return new Date(dateString).toLocaleDateString();
-    }
-  };
-  
-  // Render item for FlatList
-  const renderItem = ({ item }) => {
-    if (item.type === 'date') {
-      return (
-        <View style={styles.dateContainer}>
-          <Text style={styles.dateText}>{formatDate(item.date)}</Text>
-        </View>
-      );
-    } else {
-      const isOwn = item.sender_id.toString() === userId;
-      return <MessageBubble message={item} isOwn={isOwn} />;
-    }
-  };
-  
-  // A cleaner approach for refreshing data
-  useEffect(() => {
-    // Set isMounted flag to true when component mounts
-    isMounted.current = true;
-    
-    // Only refresh if contact isn't deleted
-    if (contactNotFound) {
-      console.log('[CHAT] Skipping data refresh: contact no longer exists');
-      return;
     }
     
-    // Only one place handles data refreshing
-    const refreshData = async () => {
-      if (!isMounted.current) return;
-      
-      // Skip refresh if contact is known to be deleted
-      if (contactNotFound) {
-        console.log('[CHAT] Skipping data refresh: contact no longer exists');
-        return;
-      }
-      
-      try {
-        await loadMessages();
-      } catch (error) {
-        console.error('[CHAT] Refresh error:', error);
-        // Check if the error is because contact doesn't exist
-        if (error.message && error.message.includes('not found')) {
-          console.log('[CHAT] Contact was deleted, setting contactNotFound flag');
-          setContactNotFound(true);
-        }
-      }
+    return date.toLocaleDateString();
+  }, [t]);
+  
+  // Group messages by date for section headers
+  const groupedMessages = useMemo(() => {
+    return groupMessagesByDate(messages);
+  }, [messages, groupMessagesByDate]);
+  
+  // Render a message item
+  const renderItem = useCallback(({ item }) => {
+    // Check if item is valid before trying to render it
+    if (!item || typeof item !== 'object') {
+      console.warn('[CHAT] Invalid message item:', item);
+      return null;
+    }
+    
+    // Map message data to correct format if needed
+    const safeItem = {
+      ...item,
+      // Ensure required fields exist
+      id: item.id || `temp-${Date.now()}`,
+      content: item.content || '',
+      timestamp: item.timestamp || new Date().toISOString()
     };
-
-    // Initial load
-    refreshData();
     
-    // Set up refresh triggers
-    let interval;
-    let focusUnsubscribe;
-    let appStateSubscription;
-    
-    if (!contactNotFound) {
-      // Only set up listeners if contact exists
-      interval = setInterval(() => {
-        if (isMounted.current && !contactNotFound) {
-          refreshData();
-        } else if (interval) {
-          clearInterval(interval);
-          interval = null;
-        }
-      }, 20000);
-      
-      focusUnsubscribe = navigation.addListener('focus', () => {
-        if (isMounted.current && !contactNotFound) refreshData();
-      });
-      
-      appStateSubscription = AppState.addEventListener('change', (nextState) => {
-        if (nextState === 'active' && isMounted.current && !contactNotFound) refreshData();
-      });
-    }
-    
-    return () => {
-      // Mark component as unmounted
-      isMounted.current = false;
-      if (interval) clearInterval(interval);
-      if (focusUnsubscribe) focusUnsubscribe();
-      if (appStateSubscription) appStateSubscription.remove();
-    };
-  }, [navigation, contactNotFound]); // Add contactNotFound to dependencies
-  
-  // If contact details are still loading, show spinner
-  if (!contactDetails && !contactNotFound) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={headerColor} />
-        </View>
-      </SafeAreaView>
+      <MessageBubble
+        item={safeItem}
+        userId={userId}
+        contactDetails={contactDetails}
+      />
     );
-  }
+  }, [userId, contactDetails]);
   
-  // If contact not found, show loading spinner while silently navigating away
-  if (contactNotFound) {
+  // Key extractor for FlatList
+  const keyExtractor = useCallback((item) => item.id.toString(), []);
+  
+  // Reset messagesMarkedAsRead when contactId changes
+  useEffect(() => {
+    messagesMarkedAsRead.current = false;
+  }, [contactId]);
+  
+  // Reset messagesMarkedAsRead when messages change
+  useEffect(() => {
+    messagesMarkedAsRead.current = false;
+  }, [messages.length]);
+  
+  // Show loading indicator
+  if (isLoading && messages.length === 0 && !contactNotFound) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={headerColor} />
         </View>
@@ -612,60 +461,65 @@ const ChatScreen = ({ route, navigation }) => {
   }
   
   return (
-    <SafeAreaView style={styles.container} edges={['right', 'bottom', 'left']}>
-      <KeyboardAvoidingView 
-        style={styles.keyboardAvoidContainer}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 30}
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        {isLoading && messages.length === 0 ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={headerColor} />
-          </View>
-        ) : (
-          <FlatList
-            data={groupMessagesByDate()}
-            keyExtractor={(item, index) => 
-              item.type === 'date' ? item.date : item.id.toString()
-            }
-            renderItem={renderItem}
-            contentContainerStyle={styles.messagesList}
-            onRefresh={handleRefresh}
-            refreshing={refreshing}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>{t('messages.noMessages')}</Text>
-              </View>
-            }
-          />
-        )}
-        
-        <View style={styles.inputContainer}>
-          {contactDetails?.is_blocked ? (
-            <View style={styles.blockedContainer}>
-              <Ionicons name="lock-closed" size={24} color="#FF3B30" style={styles.blockedIcon} />
-              <Text style={styles.blockedText}>{t('messages.contactBlocked')}</Text>
+        <View style={styles.contentContainer}>
+          {messages.length === 0 && !isLoading ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>{t('messages.noMessages')}</Text>
+              <Text style={styles.startChatText}>{t('messages.startChatting')}</Text>
             </View>
           ) : (
-            <>
-              <TextInput
-                style={styles.input}
-                value={messageText}
-                onChangeText={setMessageText}
-                placeholder={t('messages.typeMessage')}
-                multiline={!isPortrait}
-                numberOfLines={1}
-                maxHeight={isPortrait ? 40 : 100}
-              />
-              <TouchableOpacity
-                style={[styles.sendButton, { backgroundColor: headerColor }]}
-                onPress={handleSendMessage}
-                disabled={!messageText.trim()}
-              >
-                <Ionicons name="send" size={20} color="white" />
-              </TouchableOpacity>
-            </>
+            <FlatList
+              data={messages}
+              renderItem={renderItem}
+              keyExtractor={keyExtractor}
+              contentContainerStyle={styles.messageList}
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              inverted
+              removeClippedSubviews={true}
+              initialNumToRender={15}
+              maxToRenderPerBatch={10}
+              windowSize={10}
+              onScroll={() => {
+                // Avoid calling this too frequently
+                if (contactId && !contactNotFound && messages.length > 0) {
+                  // Use a ref to track if we've already marked as read
+                  if (!messagesMarkedAsRead.current) {
+                  dispatch(markAsReadAction(contactId));
+                    messagesMarkedAsRead.current = true;
+                  }
+                }
+              }}
+              onScrollBeginDrag={() => {
+                // We don't need to mark as read on both scroll events
+                // This one can be safely removed
+              }}
+            />
           )}
+        </View>
+        
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            value={messageText}
+            onChangeText={setMessageText}
+            placeholder={t('messages.typeMessage')}
+            placeholderTextColor="#999"
+            multiline
+          />
+          <TouchableOpacity
+            style={[styles.sendButton, { backgroundColor: headerColor }]}
+            onPress={handleSendMessage}
+            disabled={!messageText.trim()}
+          >
+            <Ionicons name="send" size={20} color="white" />
+          </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -773,6 +627,20 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+  },
+  contentContainer: {
+    flex: 1,
+  },
+  startChatText: {
+    color: 'gray',
+    textAlign: 'center',
+    marginTop: 20,
+  },
+  messageList: {
+    flexGrow: 1,
+    paddingHorizontal: 10,
+    paddingBottom: 10,
+    paddingTop: 0,
   },
 });
 

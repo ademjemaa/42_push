@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -6,145 +6,57 @@ import {
   FlatList, 
   TouchableOpacity, 
   TextInput, 
-  ActivityIndicator,
-  AppState
+  ActivityIndicator
 } from 'react-native';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../contexts/ThemeContext';
-import { useContacts } from '../../contexts/ContactsContext';
 import { useMessages } from '../../contexts/MessagesContext';
 import ResponsiveLayout from '../../components/ResponsiveLayout';
 import ContactListItem from '../../components/ContactListItem';
 import { Ionicons } from '@expo/vector-icons';
 import { useGlobalOrientation } from '../../contexts/OrientationContext';
+import { 
+  fetchContacts as fetchContactsAction,
+  selectAllContacts,
+  selectContactsStatus
+} from '../../redux/slices/contactsSlice';
 
 const ContactsScreen = ({ navigation }) => {
   const { t } = useTranslation();
   const { headerColor } = useTheme();
-  const { contacts, fetchContacts, isLoading } = useContacts();
   const { conversations } = useMessages();
   const { isPortrait } = useGlobalOrientation();
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const appStateRef = useRef(AppState.currentState);
-  const conversationsRef = useRef(conversations);
-  const isMountedRef = useRef(true);
-  const lastFetchTimeRef = useRef(0);
+  const isMountedRef = React.useRef(true);
   
-  // Safe fetchContacts with debouncing to prevent rapid re-fetches
-  const safeFetchContacts = useCallback(async (force = false) => {
-    if (!isMountedRef.current || (refreshing && !force)) return;
-    
-    // Add debouncing - only fetch if it's been at least 2 seconds since last fetch
-    const now = Date.now();
-    if (!force && now - lastFetchTimeRef.current < 2000) {
-      console.log('[CONTACTS] Skipping fetch - debounced');
-      return;
-    }
-    
-    try {
-      lastFetchTimeRef.current = now;
-      await fetchContacts();
-    } catch (error) {
-      console.error('[CONTACTS] Error fetching contacts:', error);
-    }
-  }, [fetchContacts, refreshing]);
+  const dispatch = useDispatch();
+  const contacts = useSelector(selectAllContacts);
+  const isLoading = useSelector(selectContactsStatus) === 'loading';
   
-  // Fetch contacts on component mount - only run once
+  // Fetch contacts on component mount
   useEffect(() => {
     isMountedRef.current = true;
-    safeFetchContacts();
+    dispatch(fetchContactsAction());
     
     // Clean up
     return () => {
       isMountedRef.current = false;
     };
-  }, []); // Empty dependency array ensures this only runs once
-  
-  // Set up refresh interval and app state listener in a separate effect
-  useEffect(() => {
-    // Set up refresh interval for real-time updates
-    const refreshIntervalId = setInterval(() => {
-      if (isMountedRef.current && !refreshing) {
-        safeFetchContacts();
-      }
-    }, 15000); // Refresh every 15 seconds
-    
-    // Set up app state listener to refresh when app comes back to foreground
-    const subscription = AppState.addEventListener('change', nextAppState => {
-      if (
-        appStateRef.current.match(/inactive|background/) && 
-        nextAppState === 'active' && 
-        isMountedRef.current
-      ) {
-        console.log('[CONTACTS] App has come to the foreground, refreshing contacts');
-        safeFetchContacts(true); // Force refresh when returning to foreground
-      }
-      appStateRef.current = nextAppState;
-    });
-    
-    // Clean up
-    return () => {
-      clearInterval(refreshIntervalId);
-      subscription.remove();
-    };
-  }, [safeFetchContacts]); // This effect depends only on safeFetchContacts
-  
-  // Monitor conversations changes in a separate effect with proper comparison
-  useEffect(() => {
-    // Deep comparison helper for conversations
-    const haveConversationsChanged = () => {
-      const oldKeys = Object.keys(conversationsRef.current);
-      const newKeys = Object.keys(conversations);
-      
-      // Quick check for different conversation IDs
-      if (oldKeys.length !== newKeys.length) {
-        return true;
-      }
-      
-      // Check if there are any new messages in existing conversations
-      for (const key of newKeys) {
-        const oldConvo = conversationsRef.current[key] || [];
-        const newConvo = conversations[key] || [];
-        
-        if (oldConvo.length !== newConvo.length) {
-          return true;
-        }
-        
-        // Check if the last message ID is different (quick comparison)
-        if (
-          oldConvo.length > 0 && 
-          newConvo.length > 0 && 
-          oldConvo[oldConvo.length - 1]?.id !== newConvo[newConvo.length - 1]?.id
-        ) {
-          return true;
-        }
-      }
-      
-      return false;
-    };
-    
-    // Only fetch if conversations actually changed
-    if (haveConversationsChanged() && isMountedRef.current) {
-      console.log('[CONTACTS] Detected new messages, refreshing contacts');
-      safeFetchContacts();
-    }
-    
-    // Update reference for next comparison
-    conversationsRef.current = conversations;
-  }, [conversations, safeFetchContacts]);
+  }, [dispatch]); // Empty dependency array ensures this only runs once
   
   // Screen focus effect
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       if (isMountedRef.current) {
         console.log('[CONTACTS] Screen focused, refreshing contacts');
-        safeFetchContacts(true); // Force refresh on screen focus
+        dispatch(fetchContactsAction());
       }
     });
     
     return unsubscribe;
-  }, [navigation, safeFetchContacts]);
+  }, [navigation, dispatch]);
   
   // Refresh contacts - user-initiated refresh
   const handleRefresh = useCallback(async () => {
@@ -152,7 +64,7 @@ const ContactsScreen = ({ navigation }) => {
     
     setRefreshing(true);
     try {
-      await fetchContacts();
+      await dispatch(fetchContactsAction()).unwrap();
     } catch (error) {
       console.error('[CONTACTS] Error refreshing contacts:', error);
     } finally {
@@ -160,7 +72,7 @@ const ContactsScreen = ({ navigation }) => {
         setRefreshing(false);
       }
     }
-  }, [fetchContacts]);
+  }, [dispatch]);
   
   // Navigate to chat screen for a contact
   const handleContactPress = useCallback((contact) => {

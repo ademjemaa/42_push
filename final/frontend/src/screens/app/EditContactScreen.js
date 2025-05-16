@@ -19,6 +19,7 @@ import { useMessages } from '../../contexts/MessagesContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Avatar from '../../components/Avatar';
 import { Ionicons } from '@expo/vector-icons';
+import { useGlobalOrientation } from '../../contexts/OrientationContext';
 
 const EditContactScreen = ({ route, navigation }) => {
   const { contactId } = route.params;

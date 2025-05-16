@@ -2,6 +2,7 @@ import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGlobalOrientation } from '../contexts/OrientationContext';
+import Animated from 'react-native-reanimated';
 
 /**
  * ResponsiveLayout - A component to standardize responsive layouts
@@ -25,6 +26,7 @@ const ResponsiveLayout = ({
   header,
   footer
 }) => {
+  // Important: Use only the regular (non-shared) values for direct styles
   const { isPortrait, width, height } = useGlobalOrientation();
 
   // Determine container styles based on orientation

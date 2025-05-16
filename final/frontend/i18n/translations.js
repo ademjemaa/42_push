@@ -104,7 +104,9 @@ export const translations = {
       cannotSend: 'Cannot send message',
       noRegisteredUser: 'This contact does not correspond to a registered user.',
       messageFailed: 'Message Failed',
-      messageSavedAsDraft: 'Could not send message. The message is saved as a draft and you can try again later.'
+      messageSavedAsDraft: 'Could not send message. The message is saved as a draft and you can try again later.',
+      startChatting: 'Start chatting by sending a message below!',
+      genericError: 'An error occurred while sending the message'
     },
     settings: {
       title: 'Settings',
@@ -121,6 +123,9 @@ export const translations = {
     lifecycle: {
       backgroundTime: 'App was in background since',
       returnTime: 'Welcome back!'
+    },
+    app: {
+      backgroundTime: 'Time in background'
     },
     profile: {
       updateSuccess: 'Profile updated successfully',
@@ -233,7 +238,9 @@ export const translations = {
       cannotSend: 'Impossible d\'envoyer le message',
       noRegisteredUser: 'Ce contact ne correspond pas à un utilisateur enregistré.',
       messageFailed: 'Échec du message',
-      messageSavedAsDraft: 'Impossible d\'envoyer le message. Le message est enregistré comme brouillon et vous pourrez réessayer plus tard.'
+      messageSavedAsDraft: 'Impossible d\'envoyer le message. Le message est enregistré comme brouillon et vous pourrez réessayer plus tard.',
+      startChatting: 'Commencez à discuter en envoyant un message ci-dessous!',
+      genericError: 'Une erreur est survenue lors de l\'envoi du message'
     },
     settings: {
       title: 'Paramètres',
@@ -248,8 +255,11 @@ export const translations = {
       logoutConfirmation: 'Êtes-vous sûr de vouloir vous déconnecter?'
     },
     lifecycle: {
-      backgroundTime: 'L\'application était en arrière-plan depuis',
+      backgroundTime: 'Application en arrière-plan depuis',
       returnTime: 'Bon retour!'
+    },
+    app: {
+      backgroundTime: 'Temps en arrière-plan'
     },
     profile: {
       updateSuccess: 'Profil mis à jour avec succès',

@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI, initSocket } from '../services/api';
+import { useDispatch } from 'react-redux';
 
 // Create Auth Context
 export const AuthContext = createContext();
@@ -12,101 +13,11 @@ export const AuthProvider = ({ children }) => {
   const [userId, setUserId] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [error, setError] = useState(null);
+  const dispatch = useDispatch();
   
-  // Load token and user data from storage on app start
-  useEffect(() => {
-    const bootstrapAsync = async () => {
-      try {
-        const storedToken = await AsyncStorage.getItem('userToken');
-        const storedUserId = await AsyncStorage.getItem('userId');
-        const storedProfile = await AsyncStorage.getItem('userProfile');
-        
-        if (storedToken && storedUserId) {
-          // Only log this in development mode
-          if (__DEV__) {
-            console.log('[AUTH] Found stored credentials, validating with server...');
-          }
-          
-          // Validate token with server before considering user as logged in
-          try {
-            // Set token and user ID temporarily to allow API calls
-            setUserToken(storedToken);
-            setUserId(storedUserId);
-            
-            // Get current user profile including avatar
-            const userData = await authAPI.getCurrentUser();
-            
-            if (userData) {
-              if (__DEV__) {
-                console.log('[AUTH] Token validated successfully');
-              }
-              
-              // Update user profile with fresh data
-              setUserProfile(userData);
-              
-              // Store profile data without the avatar to prevent CursorWindow errors
-              const profileForStorage = {...userData};
-              if (profileForStorage.avatar) {
-                // Just store a flag indicating avatar exists rather than the actual data
-                profileForStorage.hasAvatar = true;
-                delete profileForStorage.avatar;
-              }
-              
-              // Update stored profile
-              await AsyncStorage.setItem('userProfile', JSON.stringify(profileForStorage));
-              
-              // Only initialize socket if we have a valid user
-              if (userData && userData.id) {
-                if (__DEV__) {
-                  console.log('[AUTH] Initializing socket with validated user ID:', userData.id);
-                }
-                const socket = await initSocket(userData.id.toString());
-                
-                // Setup socket event listener for invalid user detection
-                if (socket) {
-                  socket.on('client_event', (event) => {
-                    if (event.type === 'invalid_user_detected') {
-                      if (__DEV__) {
-                        console.log('[AUTH] Received invalid user notification from socket, logging out...');
-                      }
-                      // Log out automatically since the user record doesn't exist anymore
-                      logout();
-                    }
-                  });
-                }
-              } else {
-                if (__DEV__) {
-                  console.log('[AUTH] Not initializing socket - missing valid user data');
-                }
-              }
-            }
-          } catch (error) {
-            // Don't log the error, just silently clear credentials
-            // This handles the "User not found" case quietly
-            
-            // Clean up stored credentials
-            await AsyncStorage.removeItem('userToken');
-            await AsyncStorage.removeItem('userId');
-            await AsyncStorage.removeItem('userProfile');
-            
-            // Reset auth state
-            setUserToken(null);
-            setUserId(null);
-            setUserProfile(null);
-          }
-        }
-      } catch (e) {
-        // Only log storage errors in development mode
-        if (__DEV__) {
-          console.error('[AUTH] Failed to load user data from storage', e);
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    bootstrapAsync();
-  }, []);
+      // Load token and user data from storage on app start  useEffect(() => {    const bootstrapAsync = async () => {      try {        const storedToken = await AsyncStorage.getItem('userToken');        const storedUserId = await AsyncStorage.getItem('userId');        const storedProfile = await AsyncStorage.getItem('userProfile');                if (storedToken && storedUserId) {          // Only log this in development mode          if (__DEV__) {            console.log('[AUTH] Found stored credentials, validating with server...');          }                    // Validate token with server before considering user as logged in          try {            // Set token and user ID temporarily to allow API calls            setUserToken(storedToken);            setUserId(storedUserId);                        // Get current user profile including avatar            const userData = await authAPI.getCurrentUser();                        // Check if userData is null (user not found)            if (!userData) {              console.log('[AUTH] User not found in database, clearing credentials');                            // Clean up stored credentials              await AsyncStorage.removeItem('userToken');              await AsyncStorage.removeItem('userId');              await AsyncStorage.removeItem('userProfile');                            // Reset auth state              setUserToken(null);              setUserId(null);              setUserProfile(null);              return;            }                        if (__DEV__) {              console.log('[AUTH] Token validated successfully');            }                        // Update user profile with fresh data            setUserProfile(userData);                        // Store profile data without the avatar to prevent CursorWindow errors            const profileForStorage = {...userData};            if (profileForStorage.avatar) {              // Just store a flag indicating avatar exists rather than the actual data              profileForStorage.hasAvatar = true;              delete profileForStorage.avatar;            }                        // Update stored profile            await AsyncStorage.setItem('userProfile', JSON.stringify(profileForStorage));                        // No socket initialization here - we'll do it in the main app flow          } catch (error) {            // Don't log the error, just silently clear credentials            // This handles the "User not found" case quietly                        // Clean up stored credentials            await AsyncStorage.removeItem('userToken');            await AsyncStorage.removeItem('userId');            await AsyncStorage.removeItem('userProfile');                        // Reset auth state            setUserToken(null);            setUserId(null);            setUserProfile(null);          }        }      } catch (e) {        // Only log storage errors in development mode        if (__DEV__) {          console.error('[AUTH] Failed to load user data from storage', e);        }      } finally {        setIsLoading(false);      }    };        bootstrapAsync();  }, []);
+  
+    // Effect to handle socket connection based on authentication state  useEffect(() => {    // We only connect sockets when user is in the main app, not during login/registration    // This will be handled by a specific function called from the main app component        // Still keep the cleanup for logout or component unmount    return () => {      if (dispatch) {        dispatch({ type: 'socket/disconnect' });      }    };  }, [dispatch]);
   
   // Login function
   const login = async (credentials) => {
@@ -129,19 +40,32 @@ export const AuthProvider = ({ children }) => {
       setUserId(response.user.id.toString());
       
       // Fetch the complete user profile including avatar
-      const currentUser = await authAPI.getCurrentUser();
-      setUserProfile(currentUser);
-      
-      // Store profile data without the avatar to prevent CursorWindow errors
-      const profileForStorage = {...currentUser};
-      if (profileForStorage.avatar) {
-        // Just store a flag indicating avatar exists rather than the actual data
-        profileForStorage.hasAvatar = true;
-        delete profileForStorage.avatar;
+      if (response && response.user && response.user.id) {
+        try {
+          const currentUser = await authAPI.getCurrentUser();
+          
+          // Only update user profile if we got a valid response
+          if (currentUser) {
+            setUserProfile(currentUser);
+            
+            // Store profile data without the avatar to prevent CursorWindow errors
+            const profileForStorage = {...currentUser};
+            if (profileForStorage.avatar) {
+              // Just store a flag indicating avatar exists rather than the actual data
+              profileForStorage.hasAvatar = true;
+              delete profileForStorage.avatar;
+            }
+            
+            // Update stored profile with filtered data
+            await AsyncStorage.setItem('userProfile', JSON.stringify(profileForStorage));
+          }
+        } catch (profileError) {
+          console.error('[AUTH] Error getting user profile after login:', profileError);
+          // Continue with login process even if profile fetch fails
+        }
       }
       
-      // Update stored profile with filtered data
-      await AsyncStorage.setItem('userProfile', JSON.stringify(profileForStorage));
+            // Don't connect socket here - it will be connected when the main app mounts
       
       return true;
     } catch (e) {
@@ -191,6 +115,11 @@ export const AuthProvider = ({ children }) => {
       setUserToken(null);
       setUserId(null);
       setUserProfile(null);
+      
+      // When user logs out, dispatch Redux socket disconnect
+      if (dispatch) {
+        dispatch({ type: 'socket/disconnect' });
+      }
       
       console.log('[AUTH] User logged out successfully');
     } catch (e) {
@@ -269,6 +198,16 @@ export const AuthProvider = ({ children }) => {
     }
   };
   
+  // Connect socket explicitly - should be called when main app is mounted
+  const connectSocket = () => {
+    if (userId && userToken && dispatch) {
+      console.log('[AUTH] Connecting socket for authenticated user:', userId);
+      dispatch({ type: 'socket/connect', payload: userId });
+    } else {
+      console.log('[AUTH] Cannot connect socket: Missing user ID or token');
+    }
+  };
+  
   // Auth context value
   const authContext = {
     isLoading,
@@ -281,6 +220,7 @@ export const AuthProvider = ({ children }) => {
     logout,
     updateProfile,
     uploadAvatar,
+    connectSocket, // Export the new method
   };
   
   return (
