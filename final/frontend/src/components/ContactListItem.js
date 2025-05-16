@@ -8,7 +8,6 @@ const ContactListItem = memo(({ contact, onPress }) => {
   const { t } = useTranslation();
   const lastMessageRef = useRef(contact.lastMessage?.id);
   
-  // Check if message is recent (less than 30 seconds old)
   const isRecent = () => {
     if (!contact.lastMessage) return false;
     
@@ -16,16 +15,13 @@ const ContactListItem = memo(({ contact, onPress }) => {
     const now = new Date();
     const diffMs = now - messageTime;
     
-    // Consider message recent if it's less than 30 seconds old
     return diffMs < 30000; // 30 seconds
   };
   
-  // Update ref when message changes
   useEffect(() => {
     lastMessageRef.current = contact.lastMessage?.id;
   }, [contact.lastMessage?.id]);
   
-  // Format timestamp for last message with relative time
   const formatLastMessageTime = (timestamp) => {
     if (!timestamp) return '';
     
@@ -36,49 +32,39 @@ const ContactListItem = memo(({ contact, onPress }) => {
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
     
-    // Within a minute
     if (diffMinutes < 1) {
       return t('messages.now');
     }
     
-    // Within an hour
     if (diffMinutes < 60) {
       return t('messages.minute', { count: diffMinutes });
     }
     
-    // Within a day
     if (diffHours < 24) {
       return t('messages.hour', { count: diffHours });
     }
     
-    // Within a week
     if (diffDays < 7) {
       return t('messages.day', { count: diffDays });
     }
     
-    // More than a week - show MM/DD format
     const month = String(messageDate.getMonth() + 1).padStart(2, '0');
     const day = String(messageDate.getDate()).padStart(2, '0');
     return `${month}/${day}`;
   };
   
-  // Get display name (nickname or phone number)
   const displayName = contact.nickname || contact.phone_number;
   
-  // Get last message snippet if exists
   const lastMessageSnippet = contact.lastMessage 
     ? contact.lastMessage.content
     : '';
 
-  // Check if contact has messages
   const hasMessages = !!contact.lastMessage;
   
-  // Check if this message is from the contact (not from the user)
   const isFromContact = hasMessages && 
     contact.lastMessage.sender_id !== contact.user_id &&
     contact.lastMessage.sender_id === contact.contact_user_id;
   
-  // Determine if we should highlight this message
   const shouldHighlight = isRecent() && isFromContact;
   
   return (

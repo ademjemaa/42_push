@@ -58,6 +58,23 @@ const ContactsScreen = ({ navigation }) => {
     return unsubscribe;
   }, [navigation, dispatch]);
   
+  // Handle explicit refresh parameter from navigation
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('state', (e) => {
+      // Check if we have a refresh parameter from navigation
+      const refreshParam = navigation.getState()?.routes?.find(
+        (route) => route.name === 'Contacts'
+      )?.params?.refresh;
+      
+      if (refreshParam && isMountedRef.current) {
+        console.log('[CONTACTS] Received refresh parameter, refreshing contacts');
+        dispatch(fetchContactsAction());
+      }
+    });
+    
+    return unsubscribe;
+  }, [navigation, dispatch]);
+  
   // Refresh contacts - user-initiated refresh
   const handleRefresh = useCallback(async () => {
     if (!isMountedRef.current) return;

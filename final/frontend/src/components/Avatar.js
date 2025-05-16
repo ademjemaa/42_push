@@ -14,20 +14,16 @@ const Avatar = ({
   const initial = name ? name.charAt(0).toUpperCase() : '?';
   const [imageError, setImageError] = useState(false);
   
-  // Determine which avatar URI to use (prioritize user avatar if available)
-  // Make sure both userAvatar and imageUri are non-null/undefined before using them
   const avatarUri = userAvatar && typeof userAvatar === 'string'
     ? `data:image/jpeg;base64,${userAvatar}` 
     : (imageUri && typeof imageUri === 'string') ? imageUri : null;
   
-  // Reset image error when avatarUri changes
   useEffect(() => {
     setImageError(false);
   }, [avatarUri]);
   
-  // Log avatar props for debugging only in development (reduced logging)
   useEffect(() => {
-    if (__DEV__ && false) { // Setting to false to disable even in dev mode
+    if (__DEV__ && false) {
       console.log('[AVATAR-DEBUG] Avatar component rendering:');
       console.log('[AVATAR-DEBUG] - name:', name);
       console.log('[AVATAR-DEBUG] - size:', size);
@@ -35,7 +31,6 @@ const Avatar = ({
     }
   }, [name, size, avatarUri]);
   
-  // Style the avatar based on size
   const containerStyle = {
     width: size,
     height: size,
@@ -55,7 +50,6 @@ const Avatar = ({
           style={styles.image} 
           defaultSource={defaultImage}
           onError={() => {
-            // Silently handle image errors without logging
             setImageError(true);
           }}
         />
@@ -67,7 +61,6 @@ const Avatar = ({
     );
   };
   
-  // If onPress is provided, make it touchable
   if (onPress) {
     return (
       <TouchableOpacity 
@@ -79,7 +72,6 @@ const Avatar = ({
     );
   }
   
-  // Otherwise, just a view
   return (
     <View style={[styles.container, containerStyle]}>
       {renderContent()}

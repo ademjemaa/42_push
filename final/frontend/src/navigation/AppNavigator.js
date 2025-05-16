@@ -11,7 +11,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { selectIsAuthenticated, selectIsLoading } from '../redux/slices/authSlice';
 
-// Import the new AuthenticatedAppWrapper component
 import AuthenticatedAppWrapper from '../components/AuthenticatedAppWrapper';
 
 // Auth Screens
@@ -26,7 +25,6 @@ import ChatScreen from '../screens/app/ChatScreen';
 import AddContactScreen from '../screens/app/AddContactScreen';
 import EditContactScreen from '../screens/app/EditContactScreen';
 
-// Create navigators
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
@@ -151,24 +149,20 @@ const AuthenticatedStackNavigator = () => {
 
 // Main App Navigator
 const AppNavigator = () => {
-  // Get authentication state from Redux via the context bridge
   const { isLoading } = useAuth();
   const isAuthenticated = useSelector(selectIsAuthenticated);
 
-  // Show loading screen if auth is loading
   if (isLoading) {
-    return null; // Or a loading component
+    return null; 
   }
 
   return (
     <NavigationContainer>
       {!isAuthenticated ? (
-        // Auth screens - wrapped in a Stack.Navigator
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="Auth" component={AuthNavigator} />
         </Stack.Navigator>
       ) : (
-        // Authenticated app with socket connection
         <AuthenticatedAppWrapper>
           <AuthenticatedStackNavigator />
         </AuthenticatedAppWrapper>

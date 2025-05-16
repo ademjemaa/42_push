@@ -86,6 +86,14 @@ const ChatScreen = ({ route, navigation }) => {
     
     const loadContactInfo = async () => {
       try {
+        // First, check if contact exists to avoid unnecessary API calls
+        const exists = await contactsService.checkContactExists(contactId);
+        if (!exists) {
+          console.log('[CHAT] Contact does not exist, redirecting');
+          setContactNotFound(true);
+          return;
+        }
+        
         // Get full contact details using Redux action
         const contactInfo = await dispatch(getContactByIdAction(contactId)).unwrap();
         
@@ -141,10 +149,13 @@ const ChatScreen = ({ route, navigation }) => {
     return actualUserId;
   }, [contactDetails]);
   
-  // Separate selector for fallback conversation
-  const fallbackMessages = useSelector(state => 
-    fallbackConversation ? selectConversation(state, fallbackConversation) : []
-  );
+  // Memoize the selector function to prevent unnecessary rerenders
+  const selectFallbackMessages = useMemo(() => 
+    (state) => fallbackConversation ? selectConversation(state, fallbackConversation) : []
+  , [fallbackConversation]);
+  
+  // Use the memoized selector
+  const fallbackMessages = useSelector(selectFallbackMessages);
   
   // Update messages when conversations change
   useEffect(() => {

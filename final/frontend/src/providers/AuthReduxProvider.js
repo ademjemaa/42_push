@@ -28,19 +28,16 @@ export const AuthReduxProvider = ({ children }) => {
   const dispatch = useDispatch();
   const [userToken, setUserToken] = useState(null);
   
-  // Select auth state from Redux
   const isLoading = useSelector(selectIsLoading);
   const userProfile = useSelector(selectUserProfile);
   const userId = useSelector(selectUserId);
   const isAuthenticated = useSelector(selectIsAuthenticated);
   const error = useSelector(selectAuthError);
 
-  // Bootstrap auth on mount
   useEffect(() => {
     dispatch(bootstrapAuth());
   }, [dispatch]);
   
-  // Get token from AsyncStorage when auth state changes
   useEffect(() => {
     const getToken = async () => {
       if (isAuthenticated) {
@@ -54,7 +51,6 @@ export const AuthReduxProvider = ({ children }) => {
     getToken();
   }, [isAuthenticated]);
 
-  // Create auth context value from Redux state
   const authContextValue = {
     isLoading,
     userToken,
@@ -62,7 +58,6 @@ export const AuthReduxProvider = ({ children }) => {
     userProfile,
     error,
     
-    // Map context methods to Redux actions
     login: async (credentials) => {
       try {
         await dispatch(loginUser(credentials)).unwrap();
@@ -116,7 +111,6 @@ export const AuthReduxProvider = ({ children }) => {
     },
   };
 
-  // Provide the context with values from Redux
   return (
     <AuthContext.Provider value={authContextValue}>
       {children}

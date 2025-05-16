@@ -75,11 +75,22 @@ router.get('/unread', auth, async (req, res) => {
 // Delete conversation with a contact
 router.delete('/conversation/:contactId', auth, async (req, res) => {
   try {
+    console.log(`[BACKEND-ROUTES] Deleting conversation with contactId=${req.params.contactId}`);
     const result = await messageService.deleteConversation(req.user.userId, req.params.contactId);
-    res.json(result);
+    
+    // If the service returned an error but didn't throw, handle it here
+    if (result.success === false) {
+      console.error('[BACKEND-ROUTES] Conversation deletion failed:', result.message);
+      return res.status(400).json({ 
+        message: result.message || 'Failed to delete conversation',
+        error: result.error
+      });
+    }
+    
+    return res.json(result);
   } catch (error) {
-    console.error('Delete conversation error:', error);
-    res.status(400).json({ message: error.message || 'Failed to delete conversation' });
+    console.error('[BACKEND-ROUTES] Delete conversation error:', error);
+    return res.status(400).json({ message: error.message || 'Failed to delete conversation' });
   }
 });
 

@@ -37,25 +37,20 @@ const RegisterScreen = ({ navigation }) => {
   const [isCheckingNumber, setIsCheckingNumber] = useState(false);
   const [numberExists, setNumberExists] = useState(false);
   
-  // Validate phone number format as user types
   useEffect(() => {
-    // Validate phone number format: 0 followed by 9 digits
     const phoneRegex = /^0\d{9}$/;
     const isValid = phoneRegex.test(phoneNumber);
     setValidNumber(isValid);
     
-    // Reset number exists check when user changes the number
     if (numberExists) {
       setNumberExists(false);
     }
     
-    // Check if phone number exists when format is valid
     if (isValid) {
       checkPhoneNumberExists(phoneNumber);
     }
   }, [phoneNumber]);
   
-  // Check if phone number already exists in the system
   const checkPhoneNumberExists = async (number) => {
     setIsCheckingNumber(true);
     try {
@@ -63,21 +58,17 @@ const RegisterScreen = ({ navigation }) => {
       setNumberExists(!isAvailable);
     } catch (error) {
       console.error('Error checking phone number:', error);
-      // In case of error, assume number is not available to be safe
       setNumberExists(true);
     } finally {
       setIsCheckingNumber(false);
     }
   };
   
-  // Handle phone number input with proper formatting
   const handlePhoneNumberChange = (text) => {
-    // Only allow digits and limit to 10 characters (0 + 9 digits)
     const formattedNumber = text.replace(/[^0-9]/g, '').slice(0, 10);
     setPhoneNumber(formattedNumber);
   };
   
-  // Request permission to access the photo library
   const requestPermissions = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -87,7 +78,6 @@ const RegisterScreen = ({ navigation }) => {
     return true;
   };
   
-  // Pick avatar image from photo library
   const pickAvatar = async () => {
     const hasPermission = await requestPermissions();
     if (!hasPermission) return;
@@ -110,7 +100,6 @@ const RegisterScreen = ({ navigation }) => {
   };
   
   const handleRegister = async () => {
-    // Validate inputs
     if (!phoneNumber.trim()) {
       Alert.alert(t('common.error'), t('auth.phoneRequired'));
       return;
@@ -142,7 +131,6 @@ const RegisterScreen = ({ navigation }) => {
     }
     
     try {
-      // Add avatar to registration data if available
       const userData = { 
         phone_number: phoneNumber, 
         username, 
@@ -161,7 +149,6 @@ const RegisterScreen = ({ navigation }) => {
     }
   };
   
-  // Layout changes based on orientation
   const containerStyle = isPortrait 
     ? styles.portraitContainer 
     : styles.landscapeContainer;

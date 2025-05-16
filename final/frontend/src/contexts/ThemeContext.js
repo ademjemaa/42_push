@@ -1,18 +1,14 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Default header color
 const DEFAULT_HEADER_COLOR = '#2196F3'; // Default blue
 
-// Create Theme Context
 export const ThemeContext = createContext();
 
-// Theme Context Provider
 export const ThemeProvider = ({ children }) => {
   const [headerColor, setHeaderColor] = useState(DEFAULT_HEADER_COLOR);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Load header color from storage on app start
   useEffect(() => {
     const loadHeaderColor = async () => {
       try {
@@ -30,13 +26,10 @@ export const ThemeProvider = ({ children }) => {
     loadHeaderColor();
   }, []);
   
-  // Update header color
   const updateHeaderColor = async (color) => {
     try {
-      // Update state
       setHeaderColor(color);
       
-      // Save to storage
       await AsyncStorage.setItem('headerColor', color);
     } catch (e) {
       console.error('Failed to save header color to storage', e);
@@ -44,13 +37,10 @@ export const ThemeProvider = ({ children }) => {
     }
   };
   
-  // Reset to default color
   const resetHeaderColor = async () => {
     try {
-      // Reset to default
       setHeaderColor(DEFAULT_HEADER_COLOR);
       
-      // Remove from storage
       await AsyncStorage.removeItem('headerColor');
     } catch (e) {
       console.error('Failed to reset header color', e);
@@ -58,7 +48,6 @@ export const ThemeProvider = ({ children }) => {
     }
   };
   
-  // Available color options
   const colorOptions = [
     { name: 'Blue', value: '#2196F3' },
     { name: 'Red', value: '#F44336' },
@@ -70,7 +59,6 @@ export const ThemeProvider = ({ children }) => {
     { name: 'Indigo', value: '#3F51B5' },
   ];
   
-  // Theme context value
   const themeContext = {
     headerColor,
     updateHeaderColor,
@@ -86,7 +74,6 @@ export const ThemeProvider = ({ children }) => {
   );
 };
 
-// Theme Context Hook
 export const useTheme = () => {
   const context = useContext(ThemeContext);
   

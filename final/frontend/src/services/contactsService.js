@@ -1,6 +1,5 @@
 import { contactsAPI } from './api';
 
-// Get a contact by ID with error handling and debug logging
 export const getContactById = async (contactId) => {
   try {
     console.log('[CONTACTS-SERVICE] Fetching contact details for ID:', contactId);
@@ -10,7 +9,6 @@ export const getContactById = async (contactId) => {
     );
     return contact;
   } catch (error) {
-    // Don't log as error if it's just a "not found" error which is expected
     if (error.message && error.message.includes('not found')) {
       console.log(`[CONTACTS-SERVICE] Contact ID ${contactId} not found`);
     } else {
@@ -21,7 +19,6 @@ export const getContactById = async (contactId) => {
   }
 };
 
-// Find a contact by user ID
 export const findContactByUserId = async (userId) => {
   try {
     console.log('[CONTACTS-SERVICE] Finding contact with user ID:', userId);
@@ -39,7 +36,6 @@ export const findContactByUserId = async (userId) => {
   }
 };
 
-// Find a contact by contact_user_id (the actual user the contact represents)
 export const findContactByContactUserId = async (contactUserId) => {
   try {
     console.log('[CONTACTS-SERVICE] Finding contact that represents user ID:', contactUserId);
@@ -60,12 +56,10 @@ export const findContactByContactUserId = async (contactUserId) => {
   }
 };
 
-// Add a function to find a contact by phone number
 export const findContactByPhoneNumber = async (phoneNumber) => {
   try {
     console.log('[CONTACTS-SERVICE] Finding contact with phone number:', phoneNumber);
     
-    // Get all contacts first
     const allContacts = await contactsAPI.getAllContacts();
     
     const contact = allContacts.find(c => c.phone_number === phoneNumber);
@@ -80,19 +74,16 @@ export const findContactByPhoneNumber = async (phoneNumber) => {
   }
 };
 
-// Check if a contact still exists
 export const checkContactExists = async (contactId) => {
   try {
     const contact = await contactsAPI.getContactById(contactId);
     return !!contact; // Returns true if contact exists, false otherwise
   } catch (error) {
-    // If we get an error like "Contact not found", return false
     if (error.message && error.message.includes('not found')) {
       console.log(`[CONTACTS-SERVICE] Contact ID ${contactId} confirmed not to exist`);
       return false;
     }
     
-    // For other errors, log and still return false to be safe
     console.error(`[CONTACTS-SERVICE] Error checking if contact exists:`, error);
     return false;
   }
@@ -101,17 +92,30 @@ export const checkContactExists = async (contactId) => {
 // Delete a contact
 export const deleteContact = async (contactId) => {
   try {
-    // Delete the contact using the API
+    try {
+      const exists = await checkContactExists(contactId);
+      if (!exists) {
+        console.log(`[CONTACTS-SERVICE] Contact ID ${contactId} doesn't exist, skipping deletion`);
+        return true; 
+      }
+    } catch (checkError) {
+      console.log(`[CONTACTS-SERVICE] Error checking contact existence:`, checkError);
+    }
+    
     await contactsAPI.deleteContact(contactId);
     console.log(`[CONTACTS-SERVICE] Successfully deleted contact ID ${contactId}`);
     return true;
   } catch (error) {
+    if (error.message && error.message.includes('not found')) {
+      console.log(`[CONTACTS-SERVICE] Contact ID ${contactId} not found on delete (already deleted)`);
+      return true; 
+    }
+    
     console.error(`[CONTACTS-SERVICE] Error deleting contact:`, error);
     throw error;
   }
 };
 
-// Export default for module imports
 export default {
   getContactById,
   findContactByUserId,

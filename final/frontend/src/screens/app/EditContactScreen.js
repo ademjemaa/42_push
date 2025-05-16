@@ -32,6 +32,9 @@ const EditContactScreen = ({ route, navigation }) => {
   const [nickname, setNickname] = useState('');
   const [avatarUri, setAvatarUri] = useState(null);
   
+  // Flag to track if contact was deleted
+  const [contactDeleted, setContactDeleted] = useState(false);
+  
   // Load contact details
   useEffect(() => {
     const loadContact = async () => {
@@ -85,6 +88,19 @@ const EditContactScreen = ({ route, navigation }) => {
       return () => backHandler.remove();
     }
   }, [navigation, route.params?.returnToChat, contactId, contact]);
+  
+  // Prevent navigation back to chat with deleted contact
+  useEffect(() => {
+    if (contactDeleted) {
+      // Override the hardware back button behavior
+      const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+        navigation.navigate('Main', { screen: 'Contacts' });
+        return true; // Prevent default back action
+      });
+      
+      return () => backHandler.remove();
+    }
+  }, [contactDeleted, navigation]);
   
   // Save contact changes
   const handleSaveContact = async () => {
@@ -172,16 +188,15 @@ const EditContactScreen = ({ route, navigation }) => {
         {
           text: t('common.delete'),
           onPress: async () => {
+            // Show loading indicator or disable the screen
+            navigation.setOptions({
+              headerRight: () => <ActivityIndicator color="white" style={{ marginRight: 10 }} />,
+              // Disable back button during deletion
+              headerLeft: () => null
+            });
+            
             try {
-              // Navigate immediately before deletion to prevent accessing deleted contact
-              if (route.params?.returnToChat) {
-                // If we came from chat, go back to Contacts tab instead of back to deleted chat
-                navigation.navigate('Main', { screen: 'Contacts' });
-              } else {
-                navigation.goBack();
-              }
-              
-              // Delete conversation messages first
+              // First, delete conversation messages
               try {
                 console.log(`[SCREEN] Deleting conversation for contact ID ${contactId}`);
                 await deleteConversation(contactId);
@@ -190,16 +205,46 @@ const EditContactScreen = ({ route, navigation }) => {
                 // Continue with contact deletion even if conversation deletion fails
               }
               
-              // After navigation, delete the contact
+              // Then delete the contact
               await deleteContact(contactId);
+              console.log(`[SCREEN] Successfully deleted contact ID ${contactId}`);
               
-              // Show success message after navigation
-              setTimeout(() => {
-                Alert.alert('Success', t('contacts.contactDeleted'));
-              }, 300);
+              // Mark contact as deleted to prevent navigation back
+              setContactDeleted(true);
+              
+              // Show success message
+              Alert.alert('Success', t('contacts.contactDeleted'), [
+                {
+                  text: 'OK',
+                  onPress: () => {
+                    // Navigate back to contacts screen after alert is dismissed
+                    navigation.navigate('Main', { 
+                      screen: 'Contacts', 
+                      params: { refresh: true }
+                    });
+                  }
+                }
+              ]);
               
             } catch (error) {
-              Alert.alert('Error', error.message);
+              console.error(`[SCREEN] Error deleting contact: ${error.message}`);
+              
+              // Even if deletion fails, mark the contact as deleted locally
+              setContactDeleted(true);
+              
+              // Show error but still navigate away
+              Alert.alert('Error', error.message, [
+                {
+                  text: 'OK',
+                  onPress: () => {
+                    // Navigate back to contacts screen even if deletion failed
+                    navigation.navigate('Main', { 
+                      screen: 'Contacts',
+                      params: { refresh: true }
+                    });
+                  }
+                }
+              ]);
             }
           },
           style: 'destructive'

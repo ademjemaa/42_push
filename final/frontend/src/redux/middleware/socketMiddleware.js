@@ -7,22 +7,18 @@ import { EventRegister } from 'react-native-event-listeners';
 import { useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 import { AppState } from 'react-native';
+import { showErrorToast } from '../../components/Toast';
 
-// Map to track message timeouts by tempId (at module level)
 const messageTimeouts = {};
 console.log('[SOCKET-MIDDLEWARE] Initialized module-level messageTimeouts map');
 
-// Socket middleware
 const socketMiddleware = store => {
   let socket = null;
   
   return next => action => {
-    // Handle socket connection/disconnection actions
     if (action.type === 'socket/connect') {
-      // Get user ID from payload
       const userId = action.payload;
       if (userId) {
-        // Initialize socket connection
         initSocket(userId).then(socketInstance => {
           if (socketInstance) {
             socket = socketInstance;
@@ -45,12 +41,10 @@ const socketMiddleware = store => {
       }
     }
     
-    // Handle socket message sending
     if (action.type === 'socket/sendMessage') {
       const { receiverId, content, contactId, tempId } = action.payload;
       
       if (socket && socket.connected) {
-        // Get current user ID
         AsyncStorage.getItem('userId').then(senderId => {
           if (!senderId) {
             console.error('[SOCKET-MIDDLEWARE] Cannot send message: No sender ID found');
@@ -69,7 +63,6 @@ const socketMiddleware = store => {
             }
           };
           
-          // Create temporary message in local state while waiting for server confirmation
           const tempMessage = {
             id: tempId || `temp-${Date.now()}`,
             sender_id: senderId,
@@ -80,23 +73,19 @@ const socketMiddleware = store => {
             is_read: true // Our own messages are always read
           };
           
-          // Dispatch to Redux
           store.dispatch(messageReceived({ 
             contactId, 
             message: tempMessage,
             tempId // Include the tempId for later replacement
           }));
           
-          // Also update the contact's lastMessage for this contact
           store.dispatch(updateContactLastMessage({
             contactId,
             message: tempMessage
           }));
           
-          // Notify the contacts context that a message has been sent
           EventRegister.emit('contactsChanged', { source: 'socket' });
           
-          // Set a delivery timeout to mark message as failed if no response
           const messageTimeout = setTimeout(() => {
             console.log('[SOCKET-MIDDLEWARE] Message send timeout, marking as failed:', tempId);
             try {
@@ -110,6 +99,9 @@ const socketMiddleware = store => {
                 },
                 tempId 
               }));
+              
+              showErrorToast('messages.messageFailed', {}, { position: 'bottom' });
+              
               if (tempId && messageTimeouts && messageTimeouts[tempId]) {
                 delete messageTimeouts[tempId];
               }
@@ -123,7 +115,6 @@ const socketMiddleware = store => {
               messageTimeouts[tempId] = messageTimeout;
               console.log('[SOCKET-MIDDLEWARE] Stored timeout for message:', tempId);
               
-              // Debug log to verify the timeout was stored correctly
               const storedKeys = Object.keys(messageTimeouts);
               console.log('[SOCKET-MIDDLEWARE] Updated messageTimeouts keys:', storedKeys.join(', '));
               console.log('[SOCKET-MIDDLEWARE] messageTimeouts includes our tempId:', 
@@ -136,13 +127,11 @@ const socketMiddleware = store => {
               { tempIdExists: !!tempId, messageTimeoutsExists: !!messageTimeouts });
           }
           
-          // Send message via socket
           socket.emit('message', messageData, (ackData) => {
             try {
               console.log('[SOCKET-MIDDLEWARE] Message callback received:', ackData ? 'with data' : 'empty');
               console.log('[SOCKET-MIDDLEWARE] Looking for tempId in messageTimeouts:', tempId);
               
-              // Detailed logging about messageTimeouts
               console.log('[SOCKET-MIDDLEWARE] Debug in callback - messageTimeouts type:', typeof messageTimeouts);
               console.log('[SOCKET-MIDDLEWARE] Debug in callback - messageTimeouts exists:', messageTimeouts ? 'yes' : 'no');
               
@@ -152,7 +141,6 @@ const socketMiddleware = store => {
                   keys.length > 0 ? keys.join(', ') : 'empty');
               }
               
-              // Clear the timeout as we got a response
               if (tempId && messageTimeouts && messageTimeouts[tempId]) {
                 clearTimeout(messageTimeouts[tempId]);
                 delete messageTimeouts[tempId];
@@ -161,11 +149,9 @@ const socketMiddleware = store => {
                 console.log('[SOCKET-MIDDLEWARE] No timeout found in callback for tempId:', tempId);
               }
               
-              // Handle acknowledgment (if the server supports it)
               if (ackData && ackData.error) {
                 console.error('[SOCKET-MIDDLEWARE] Message send error:', ackData.error);
                 
-                // Mark message as failed
                 store.dispatch(messageReceived({ 
                   contactId, 
                   message: {
@@ -185,7 +171,8 @@ const socketMiddleware = store => {
       } else {
         console.error('[SOCKET-MIDDLEWARE] Cannot send message: Socket not connected');
         
-        // Create a failed message directly since we know socket is not connected
+        showErrorToast('messages.cannotSend', {}, { position: 'bottom' });
+        
         AsyncStorage.getItem('userId').then(senderId => {
           if (!senderId) return;
           
@@ -214,29 +201,24 @@ const socketMiddleware = store => {
   };
 };
 
-// Set up socket event listeners
 const setupSocketListeners = (socket, store) => {
   if (!socket) {
     console.error('[SOCKET-MIDDLEWARE] Cannot set up listeners: socket is null');
     return;
   }
 
-  // Handle new message received
   socket.on('newMessage', (data) => {
     try {
       console.log('[SOCKET-MIDDLEWARE] Received new message:', data);
       
-      // Check if data is valid
       if (!data) {
         console.error('[SOCKET-MIDDLEWARE] Invalid message data received:', data);
         return;
       }
       
-      // Check if this is a typed message or just raw data
       const messageType = data.type || MESSAGE_TYPES.PRIVATE_MESSAGE;
       const payload = data.payload || data;
       
-      // Guard against empty payload
       if (!payload) {
         console.error('[SOCKET-MIDDLEWARE] Empty payload in message:', data);
         return;
@@ -248,12 +230,10 @@ const setupSocketListeners = (socket, store) => {
     }
   });
   
-  // Handle message delivery confirmation
   socket.on('message_sent', (data) => {
     try {
       console.log('[SOCKET-MIDDLEWARE] Message delivery confirmation:', data);
       
-      // Diagnostic logging for debugging
       console.log('[SOCKET-MIDDLEWARE] Debug - messageTimeouts type:', typeof messageTimeouts);
       console.log('[SOCKET-MIDDLEWARE] Debug - messageTimeouts exists:', messageTimeouts ? 'yes' : 'no');
       
@@ -264,7 +244,6 @@ const setupSocketListeners = (socket, store) => {
         console.log('[SOCKET-MIDDLEWARE] Debug - messageTimeouts is null or undefined');
       }
       
-      // Check if data is valid
       if (!data) {
         console.error('[SOCKET-MIDDLEWARE] Invalid message_sent data:', data);
         return;
@@ -280,11 +259,9 @@ const setupSocketListeners = (socket, store) => {
         return;
       }
       
-      // Check if we have a tempId for replacement
       if (data.tempId) {
         console.log('[SOCKET-MIDDLEWARE] Looking for tempId in messageTimeouts:', data.tempId);
         
-        // Clear any existing timeout for this message
         if (messageTimeouts && messageTimeouts[data.tempId]) {
           try {
             clearTimeout(messageTimeouts[data.tempId]);
@@ -298,13 +275,12 @@ const setupSocketListeners = (socket, store) => {
             'Available tempIds:', messageTimeouts ? Object.keys(messageTimeouts) : 'none');
         }
         
-        // We should replace the temp message with the real one
         store.dispatch(messageReceived({
           contactId: data.contactId,
           message: {
             id: data.id,
-            sender_id: data.sender_id || data.senderId,
-            receiver_id: data.receiver_id || data.receiverId,
+            sender_id: data.senderId,
+            receiver_id: data.receiverId,
             content: data.content || '',
             timestamp: data.timestamp || new Date().toISOString(),
             status: 'delivered',
@@ -313,10 +289,8 @@ const setupSocketListeners = (socket, store) => {
           tempId: data.tempId
         }));
         
-        // Force refresh the contacts list to ensure UI is updated
         store.dispatch(fetchContacts());
       } else {
-        // Just update the status of an existing message
         store.dispatch(messageDelivered({
           contactId: data.contactId,
           messageId: data.id
@@ -327,18 +301,15 @@ const setupSocketListeners = (socket, store) => {
     }
   });
   
-  // Handle message read confirmation
   socket.on('message_read', (data) => {
     try {
       console.log('[SOCKET-MIDDLEWARE] Message read confirmation:', data);
       
-      // Check if data is valid
       if (!data || !data.contactId) {
         console.error('[SOCKET-MIDDLEWARE] Invalid message_read data:', data);
         return;
       }
       
-      // Update message read status
       store.dispatch(messageRead({
         contactId: data.contactId,
         messageId: data.messageId // Optional - if null, marks all messages as read
@@ -348,22 +319,54 @@ const setupSocketListeners = (socket, store) => {
     }
   });
   
-  // Handle socket connection error
   socket.on('connect_error', (error) => {
     console.error('[SOCKET-MIDDLEWARE] Connection error:', error?.message || 'Unknown error');
   });
   
-  // Handle socket disconnection
   socket.on('disconnect', (reason) => {
     console.log('[SOCKET-MIDDLEWARE] Disconnected. Reason:', reason || 'Unknown reason');
   });
   
-  // Setup general error handler
   socket.on('error', (error) => {
     console.error('[SOCKET-MIDDLEWARE] Socket error:', error?.message || 'Unknown error');
+    showErrorToast('messages.genericError');
   });
   
-  // Handle server-side socket events
+  socket.on('message_error', (data) => {
+    try {
+      console.error('[SOCKET-MIDDLEWARE] Message error from server:', data);
+      
+      showErrorToast('messages.messageFailed', { 
+        details: data.error || 'Unknown error' 
+      });
+      
+      if (data.originalMessage && data.originalMessage.tempId) {
+        AsyncStorage.getItem('userId').then(userId => {
+          const contactId = data.originalMessage.receiverId;
+          
+          if (contactId) {
+            store.dispatch(messageReceived({
+              contactId,
+              message: {
+                id: data.originalMessage.tempId,
+                sender_id: userId,
+                receiver_id: data.originalMessage.receiverId,
+                content: data.originalMessage.content || '',
+                timestamp: data.originalMessage.timestamp || new Date().toISOString(),
+                status: 'failed',
+                delivery_failed: true,
+                error_message: data.error || 'Message delivery failed'
+              },
+              tempId: data.originalMessage.tempId
+            }));
+          }
+        });
+      }
+    } catch (error) {
+      console.error('[SOCKET-MIDDLEWARE] Error handling message_error event:', error);
+    }
+  });
+  
   socket.on('server_event', (data) => {
     try {
       console.log('[SOCKET-MIDDLEWARE] Server event received:', data);
@@ -373,15 +376,11 @@ const setupSocketListeners = (socket, store) => {
         return;
       }
       
-      // Process different server event types
       switch (data.type) {
         case 'user_status_change':
-          // Handle online/offline status
           break;
         case 'contact_update':
-          // Handle contact updates from server
           break;
-        // Add other server event types as needed
         default:
           console.log('[SOCKET-MIDDLEWARE] Unhandled server event type:', data.type);
       }
@@ -391,9 +390,7 @@ const setupSocketListeners = (socket, store) => {
   });
 };
 
-// Handle different message types
 const handleMessageByType = (type, payload, store) => {
-  // Add a safety check for undefined payload
   if (!payload) {
     console.error('[SOCKET-MIDDLEWARE] Received undefined or null payload for message type:', type);
     return;
@@ -402,12 +399,10 @@ const handleMessageByType = (type, payload, store) => {
   try {
     switch (type) {
       case MESSAGE_TYPES.PRIVATE_MESSAGE:
-        // Regular message handling
         handlePrivateMessage(payload, store);
         break;
         
       case MESSAGE_TYPES.CONTACT_ADDED:
-        // Handle new contact with potential message
         if (payload.user) {
           handleContactAdded(payload, store);
         } else {
@@ -416,7 +411,6 @@ const handleMessageByType = (type, payload, store) => {
         break;
         
       case MESSAGE_TYPES.CONTACT_UPDATED:
-        // Handle contact update
         if (payload.user) {
           store.dispatch(contactUpdated(payload.user));
         } else {
@@ -425,7 +419,6 @@ const handleMessageByType = (type, payload, store) => {
         break;
         
       case MESSAGE_TYPES.CONTACT_DELETED:
-        // Handle contact deletion
         if (payload.contactId) {
           store.dispatch(contactDeleted(payload.contactId));
         } else {
@@ -434,7 +427,6 @@ const handleMessageByType = (type, payload, store) => {
         break;
         
       default:
-        // Handle unknown message type as regular message
         console.log('[SOCKET-MIDDLEWARE] Unknown message type, processing as standard message:', type);
         handlePrivateMessage(payload, store);
     }
@@ -443,30 +435,25 @@ const handleMessageByType = (type, payload, store) => {
   }
 };
 
-// Handle private message
 const handlePrivateMessage = async (data, store) => {
   try {
-    // Validate required data
     if (!data) {
       console.error('[SOCKET-MIDDLEWARE] Received empty data for private message');
       return;
     }
     
-    // Get current user ID to check if this is an incoming message
     const userId = await AsyncStorage.getItem('userId');
     if (!userId) {
       console.error('[SOCKET-MIDDLEWARE] No user ID found when processing message');
       return;
     }
     
-    // Standardize field names (handle both camelCase and snake_case formats)
     const senderId = data.sender_id || data.senderId;
     if (!senderId) {
       console.error('[SOCKET-MIDDLEWARE] Missing sender ID in message data:', data);
       return;
     }
     
-    // Safely access content with fallbacks and accommodate empty string
     let content = '';
     if (data.content !== undefined) {
       content = data.content;
@@ -478,14 +465,11 @@ const handlePrivateMessage = async (data, store) => {
     const receiverId = (data.receiver_id || data.receiverId || userId).toString();
     const timestamp = data.timestamp || new Date().toISOString();
     
-    // Don't process our own sent messages that come back via socket
-    // These are already added to the conversation when we send them
     if (senderId.toString() === userId) {
       console.log('[SOCKET-MIDDLEWARE] Ignoring our own message received via socket');
       return;
     }
     
-    // Create the message object in our expected format with safe defaults
     const message = {
       id: messageId,
       sender_id: senderId.toString(),
@@ -504,7 +488,6 @@ const handlePrivateMessage = async (data, store) => {
     }
     
     try {
-      // Check if this message contains auto-created contact information
       if (data.auto_created_contact) {
         console.log('[SOCKET-MIDDLEWARE] Message contains auto-created contact:', data.auto_created_contact);
         
@@ -513,27 +496,20 @@ const handlePrivateMessage = async (data, store) => {
           return;
         }
         
-        // Add the contact to Redux store
         store.dispatch(contactAdded(data.auto_created_contact));
         
-        // Using the contactId from the auto-created contact
         const contactId = data.auto_created_contact.id.toString();
         
-        // Add the message to Redux store
         store.dispatch(messageReceived({ contactId, message }));
         
-        // Also update the contact's lastMessage property for UI display
         store.dispatch(updateContactLastMessage({ contactId, message }));
         
-        // Force refresh the contacts list to ensure UI is updated
         store.dispatch(fetchContacts());
         
-        // Notify the contacts context that a new message has been received
         EventRegister.emit('contactsChanged', { source: 'socket' });
         return;
       }
       
-      // Try to find the contact
       let contactInfo = null;
       
       if (senderId) {
@@ -544,7 +520,6 @@ const handlePrivateMessage = async (data, store) => {
         }
       }
       
-      // If not found, try finding by phone number if available
       if (!contactInfo && data.sender_phone_number) {
         try {
           contactInfo = await contactsService.findContactByPhoneNumber(data.sender_phone_number);
@@ -553,7 +528,6 @@ const handlePrivateMessage = async (data, store) => {
         }
       }
       
-      // If we still don't have a contact, create a temporary one
       if (!contactInfo && data.sender_phone_number) {
         const tempContactInfo = {
           id: `temp-${Date.now()}`,
@@ -564,7 +538,6 @@ const handlePrivateMessage = async (data, store) => {
           is_temp: true
         };
         
-        // Add the temp contact to Redux store
         store.dispatch(contactAdded(tempContactInfo));
         contactInfo = tempContactInfo;
       } else if (!contactInfo) {
@@ -575,16 +548,12 @@ const handlePrivateMessage = async (data, store) => {
       if (contactInfo && contactInfo.id) {
         const contactId = contactInfo.id.toString();
         
-        // Add the message to Redux store
         store.dispatch(messageReceived({ contactId, message }));
         
-        // Also update the contact's lastMessage property for UI display
         store.dispatch(updateContactLastMessage({ contactId, message }));
         
-        // Force refresh the contacts list to ensure UI is updated
         store.dispatch(fetchContacts());
         
-        // Notify the contacts context that a new message has been received
         EventRegister.emit('contactsChanged', { source: 'socket' });
       } else {
         console.error('[SOCKET-MIDDLEWARE] Contact info is missing ID:', contactInfo);
@@ -597,10 +566,8 @@ const handlePrivateMessage = async (data, store) => {
   }
 };
 
-// Handle contact added with possible message
 const handleContactAdded = (data, store) => {
   try {
-    // Add safety checks
     if (!data || !data.user) {
       console.error('[SOCKET-MIDDLEWARE] Invalid contact added data:', data);
       return;
@@ -611,12 +578,9 @@ const handleContactAdded = (data, store) => {
       return;
     }
     
-    // Add the contact to Redux store
     store.dispatch(contactAdded(data.user));
     
-    // If there's an associated message, add it too
     if (data.message) {
-      // Validate message data
       if (!data.message.id || !data.message.content) {
         console.error('[SOCKET-MIDDLEWARE] Invalid message data in contact added:', data.message);
         return;
@@ -628,20 +592,16 @@ const handleContactAdded = (data, store) => {
         message: data.message 
       }));
       
-      // Also update the contact's lastMessage property for UI display
       store.dispatch(updateContactLastMessage({ 
         contactId, 
         message: data.message 
       }));
       
-      // Force refresh the contacts list to ensure UI is updated
       store.dispatch(fetchContacts());
       
-      // Notify the contacts context that a new contact with message has been added
       EventRegister.emit('contactsChanged', { source: 'socket' });
     }
     
-    // Even if there's no message, notify that contacts have changed
     EventRegister.emit('contactsChanged', { source: 'socket' });
   } catch (error) {
     console.error('[SOCKET-MIDDLEWARE] Error processing contact added:', error);

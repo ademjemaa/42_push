@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 
 // API base URL - change to your backend server URL
 // Using 10.16.11.9 from the error logs instead of 192.168.1.10
-const API_URL = 'http://192.168.1.10:3000';  // Remove /api from the URL for socket.io
+const API_URL = 'http://10.16.13.13:3000';  // Remove /api from the URL for socket.io
 const API_ENDPOINT = `${API_URL}/api`;  // Keep the /api for REST endpoints
 
 // Headers with authentication token
@@ -16,15 +16,12 @@ const getHeaders = async () => {
   };
 };
 
-// Socket connection module
 let socket = null;
 let socketInitialized = false;
 
-// Initialize socket connection
 export const initSocket = async (userId) => {
   try {
     if (!userId) {
-      // Don't attempt connection without user ID
       return null;
     }
     
@@ -36,8 +33,7 @@ export const initSocket = async (userId) => {
     const token = await AsyncStorage.getItem('userToken');
     console.log('[SOCKET] Using auth token:', token ? 'Token exists' : 'No token');
     
-    // Create new socket connection to root URL, not to /api path
-    socket = io(API_URL, {  // Use root URL without /api
+    socket = io(API_URL, {  
       auth: {
         token: token
       },
@@ -46,11 +42,9 @@ export const initSocket = async (userId) => {
       reconnectionDelay: 1000
     });
     
-    // Setup socket event listeners
     socket.on('connect', () => {
       console.log('[SOCKET] Connected successfully. Socket ID:', socket.id);
       
-      // Register socket for user ID
       if (userId) {
         console.log('[SOCKET] Registering user ID:', userId);
         socket.emit('register', userId);
@@ -63,20 +57,17 @@ export const initSocket = async (userId) => {
     });
     
     socket.on('connect_error', (error) => {
-      // Only log in development mode or if we're already logged in
       if (__DEV__ || socketInitialized) {
         console.log('[SOCKET] Connection error:', error.message);
       }
     });
     
     socket.on('disconnect', (reason) => {
-      // Only log in development mode or if we were previously connected
       if (__DEV__ || socketInitialized) {
         console.log('[SOCKET] Disconnected. Reason:', reason);
       }
     });
     
-    // Return socket for caller's use
     return socket;
   } catch (error) {
     if (__DEV__) {
@@ -86,13 +77,11 @@ export const initSocket = async (userId) => {
   }
 };
 
-// Get socket instance (returns null if not connected)
 export const getSocket = () => {
   if (socket && socket.connected) {
     return socket;
   }
   
-  // Don't show warning if not initialized yet - it's normal before login
   if (socketInitialized) {
     console.warn('[SOCKET] Socket requested but not connected');
   }
@@ -100,7 +89,6 @@ export const getSocket = () => {
   return null;
 };
 
-// Authentication API
 export const authAPI = {
   login: async (credentials) => {
     try {
@@ -118,15 +106,12 @@ export const authAPI = {
         throw new Error(data.message || 'Login failed');
       }
       
-      // Store the token
       if (data.token) {
         await AsyncStorage.setItem('userToken', data.token);
         await AsyncStorage.setItem('userId', data.user.id.toString());
-        
-        // Store user profile without avatar to prevent CursorWindow errors
+      
         const profileForStorage = {...data.user};
         if (profileForStorage.avatar) {
-          // Just store a flag indicating avatar exists rather than the actual data
           profileForStorage.hasAvatar = true;
           delete profileForStorage.avatar;
         }
@@ -142,12 +127,10 @@ export const authAPI = {
   
   register: async (userData) => {
     try {
-      // Extract avatar URI and create a copy of userData without it
       const avatarUri = userData.avatar_uri;
       const userDataForRegistration = { ...userData };
       delete userDataForRegistration.avatar_uri;
 
-      // First register the user
       const response = await fetch(`${API_ENDPOINT}/users/register`, {
         method: 'POST',
         headers: {
@@ -162,7 +145,6 @@ export const authAPI = {
         throw new Error(data.message || 'Registration failed');
       }
       
-      // If avatar is provided, log in and upload the avatar
       if (avatarUri) {
         try {
           // Login to get token
@@ -172,12 +154,10 @@ export const authAPI = {
           });
           
           if (loginResponse && loginResponse.token) {
-            // Upload avatar
             await authAPI.uploadAvatar(avatarUri);
           }
         } catch (avatarError) {
           console.error('Avatar upload after registration failed:', avatarError);
-          // Continue with registration even if avatar upload fails
         }
       }
       
@@ -190,12 +170,10 @@ export const authAPI = {
   
   logout: async () => {
     try {
-      // Clear the token and user data
       await AsyncStorage.removeItem('userToken');
       await AsyncStorage.removeItem('userId');
       await AsyncStorage.removeItem('userProfile');
       
-      // Disconnect socket
       if (socket) {
         socket.disconnect();
         socket = null;
@@ -224,7 +202,6 @@ export const authAPI = {
       
       return data;
     } catch (error) {
-      // Don't log the error in production
       throw error;
     }
   },
@@ -256,7 +233,6 @@ export const authAPI = {
     console.log('[API] Image URI:', imageUri);
     
     try {
-      // Make FileSystem require safe
       let FileSystem = null;
       try {
         FileSystem = require('expo-file-system');
@@ -264,7 +240,6 @@ export const authAPI = {
         console.error('[API] Error loading expo-file-system:', error);
       }
 
-      // Make ImageManipulator require safe
       let ImageManipulator = null;
       try {
         ImageManipulator = require('expo-image-manipulator');
@@ -288,11 +263,9 @@ export const authAPI = {
           throw new Error('Image file is empty');
         }
 
-        // If file is very large, attempt to resize it
         if (fileInfo.size > 1000000) { // If larger than ~1MB
           console.log('[API] Large file detected, will process before upload');
           
-          // We'll use expo-image-manipulator to resize if it's available
           try {
             const manipResult = await ImageManipulator.manipulateAsync(
               imageUri,
@@ -300,16 +273,13 @@ export const authAPI = {
               { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG }
             );
             
-            // Use the resized image instead
             imageUri = manipResult.uri;
             console.log('[API] Image resized successfully, new URI:', imageUri);
             
-            // Get new file info
             fileInfo = await FileSystem.getInfoAsync(imageUri);
             console.log('[API] Resized file info:', JSON.stringify(fileInfo));
           } catch (resizeError) {
             console.log('[API] Failed to resize image, will continue with original:', resizeError.message);
-            // Continue with original file if resize fails
           }
         }
       } catch (fileError) {
@@ -317,13 +287,11 @@ export const authAPI = {
         throw new Error('Failed to access image file: ' + fileError.message);
       }
       
-      // 2. Get authentication token
       const token = await AsyncStorage.getItem('userToken');
       if (!token) {
         throw new Error('Authentication token not found');
       }
       
-      // 3. Extract filename from URI
       let filename = 'photo.jpg'; // Default filename
       try {
         if (imageUri && typeof imageUri === 'string') {
@@ -335,11 +303,9 @@ export const authAPI = {
         }
       } catch (error) {
         console.log('[API] Error extracting filename:', error);
-        // Continue with default filename
       }
       console.log('[API] Filename:', filename);
       
-      // 4. Determine MIME type based on file extension
       let extension = 'jpg'; // Default extension
       let mimeType = 'image/jpeg'; // Default MIME type
       
@@ -370,15 +336,12 @@ export const authAPI = {
         }
       } catch (error) {
         console.log('[API] Error determining MIME type:', error);
-        // Continue with default MIME type
       }
       
       console.log('[API] MIME type:', mimeType);
       
-      // 5. Create FormData object
       const formData = new FormData();
       
-      // 6. Platform-specific URI handling
       let processedUri = imageUri;
       
       if (Platform.OS === 'ios') {
@@ -392,7 +355,6 @@ export const authAPI = {
       
       console.log('[API] Processed URI:', processedUri);
       
-      // 7. Append the file to FormData with proper structure
       const fileObject = {
         uri: processedUri,
         name: filename,
@@ -404,36 +366,30 @@ export const authAPI = {
       
       console.log('[API] FormData created with avatar field');
       
-      // 8. Log API endpoint
       const endpoint = `${API_ENDPOINT}/users/avatar`;
       console.log('[API] Making request to:', endpoint);
       
-      // 9. Make the request WITHOUT setting Content-Type header (crucial)
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
-          // DO NOT set Content-Type - the browser will set it correctly with boundaries
         },
         body: formData
       });
       
       console.log('[API] Response status code:', response.status);
       
-      // 10. Handle response
       let responseData;
       
       try {
         responseData = await response.json();
         console.log('[API] Response data:', JSON.stringify(responseData));
       } catch (parseError) {
-        // If JSON parsing fails, try to get text
         const textResponse = await response.text();
         console.log('[API] Text response:', textResponse);
         responseData = { message: textResponse };
       }
       
-      // 11. Check if request was successful
       if (!response.ok) {
         console.error('[API] Upload failed with status:', response.status);
         throw new Error(responseData.message || 'Failed to upload avatar');
@@ -447,7 +403,6 @@ export const authAPI = {
     }
   },
 
-  // Get user avatar by ID
   getUserAvatar: async (userId) => {
     try {
       const headers = await getHeaders();
@@ -457,23 +412,19 @@ export const authAPI = {
       });
       
       if (!response.ok) {
-        // Instead of throwing an error, silently return null
         if (__DEV__) {
           console.log(`[API] User avatar not found for user ID: ${userId}`);
         }
         return null;
       }
       
-      // Get the avatar as blob
       const blob = await response.blob();
       
-      // Convert blob to base64
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => {
           const base64data = reader.result;
           if (base64data && typeof base64data === 'string' && base64data.includes(',')) {
-            // Extract the actual base64 part after the comma
             resolve(base64data.split(',')[1]); // Remove the data:image/jpeg;base64, part
           } else {
             console.log('[API] Invalid base64 data format');
@@ -481,7 +432,6 @@ export const authAPI = {
           }
         };
         reader.onerror = () => {
-          // On error, silently return null instead of rejecting
           if (__DEV__) {
             console.log(`[API] Error reading avatar blob for user ID: ${userId}`);
           }
@@ -490,7 +440,6 @@ export const authAPI = {
         reader.readAsDataURL(blob);
       });
     } catch (error) {
-      // Log only in development environment and return null
       if (__DEV__) {
         console.log(`[API] User avatar error for user ID: ${userId}:`, error.message);
       }
@@ -506,10 +455,8 @@ export const authAPI = {
         headers,
       });
       
-      // If response is not ok, handle gracefully
       if (!response.ok) {
         if (response.status === 404) {
-          // User not found, return null instead of throwing
           return null;
         }
         const data = await response.json();
@@ -520,15 +467,12 @@ export const authAPI = {
       return data;
     } catch (error) {
       console.error('Find user by phone error:', error);
-      // Return null instead of throwing to handle this gracefully
       return null;
     }
   },
 
-  // Check if a phone number is available for registration (no auth required)
   checkPhoneAvailability: async (phoneNumber) => {
     try {
-      // This endpoint doesn't require authentication
       const response = await fetch(`${API_ENDPOINT}/users/checkPhoneAvailability/${phoneNumber}`, {
         method: 'GET',
         headers: {
@@ -545,7 +489,6 @@ export const authAPI = {
       return data.available; // Returns true if available, false if taken
     } catch (error) {
       console.error('Check phone availability error:', error);
-      // In case of error, assume number is not available to be safe
       return false;
     }
   },
@@ -764,23 +707,28 @@ export const messagesAPI = {
     }
     
     const timestamp = new Date().toISOString();
+    const tempId = `temp-${Date.now()}`;
     
     // Make sure IDs are strings to prevent type mismatches
     const messageData = {
+      type: 'PRIVATE_MESSAGE',
+      payload: {
       senderId: senderId.toString(),
       receiverId: receiverId.toString(),
       content,
-      timestamp
+        timestamp,
+        tempId
+      }
     };
     
     console.log('[SOCKET] Sending private message:', JSON.stringify(messageData));
     console.log('[SOCKET-DEBUG] Socket connection status:', socket.connected ? 'Connected' : 'Disconnected');
     console.log('[SOCKET-DEBUG] Socket ID:', socket.id);
     
-    socket.emit('privateMessage', messageData);
+    socket.emit('message', messageData);
     
     return { 
-      id: `temp-${Date.now()}`,
+      id: tempId,
       sender_id: senderId,
       receiver_id: receiverId,
       content,
@@ -864,21 +812,26 @@ export const messagesAPI = {
     }
     
     const timestamp = new Date().toISOString();
+    const tempId = `temp-${Date.now()}`;
     
     // Make sure IDs are strings to prevent type mismatches
     const messageData = {
+      type: 'PRIVATE_MESSAGE',
+      payload: {
       senderId: senderId.toString(),
       receiverId: receiverId.toString(),
       content: message,
-      timestamp
+        timestamp,
+        tempId
+      }
     };
     
     console.log('[SOCKET] Sending private message:', JSON.stringify(messageData));
     console.log('[SOCKET-DEBUG] Socket connection status:', socket.connected ? 'Connected' : 'Disconnected');
     console.log('[SOCKET-DEBUG] Socket ID:', socket.id);
     
-    socket.emit('privateMessage', messageData);
+    socket.emit('message', messageData);
     
-    return { timestamp };
+    return { timestamp, tempId };
   },
 }; 

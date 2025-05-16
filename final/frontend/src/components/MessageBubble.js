@@ -9,23 +9,19 @@ const MessageBubble = (props) => {
   const { headerColor } = useTheme();
   const dispatch = useDispatch();
   
-  // Use either the item prop or message prop (for backward compatibility)
   const messageData = item || message;
   
-  // Safety check - if no message data, don't render
   if (!messageData) {
     console.warn('[MESSAGE-BUBBLE] No message data provided', props);
     return null;
   }
   
-  // If isOwn is not directly provided, determine it from userId
   const isOwn = propIsOwn !== undefined ? 
     propIsOwn : 
     (messageData.sender_id && userId) ? 
       messageData.sender_id.toString() === userId.toString() : 
       false;
   
-  // Format timestamp
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
     try {
@@ -37,18 +33,15 @@ const MessageBubble = (props) => {
     }
   };
   
-  // Safe property getters with default values
   const getContent = () => messageData.content || '';
   const getTimestamp = () => messageData.timestamp || '';
   const isSending = () => messageData.sending === true;
   const hasFailed = () => messageData.delivery_failed === true;
   
-  // Handle retry for failed messages
   const handleRetry = async () => {
     if (!messageData.receiver_id || !messageData.content) return;
     
     try {
-      // Dispatch message retry via Redux
       dispatch({ 
         type: 'socket/sendMessage', 
         payload: { 
