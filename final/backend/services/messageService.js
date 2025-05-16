@@ -3,7 +3,7 @@ const contactService = require('./contactService');
 
 // Save a new message
 const saveMessage = async (messageData) => {
-  const { senderId, receiverId, content, timestamp } = messageData;
+  const { senderId, receiverId, content, timestamp, tempId } = messageData;
   
   try {
     // Insert message into database
@@ -17,6 +17,11 @@ const saveMessage = async (messageData) => {
       'SELECT * FROM messages WHERE id = ?',
       [result.lastID]
     );
+    
+    // Include tempId in the returned message for frontend reference
+    if (tempId) {
+      message.tempId = tempId;
+    }
     
     return message;
   } catch (error) {
@@ -122,7 +127,7 @@ const deleteConversation = async (userId, contactId) => {
 
 // Handle incoming message and auto-create contact if needed
 const handleIncomingMessage = async (messageData) => {
-  const { senderId, receiverId, content, timestamp } = messageData;
+  const { senderId, receiverId, content, timestamp, tempId } = messageData;
   
   console.log(`[BACKEND-DEBUG] Handling incoming message: senderId=${senderId}, receiverId=${receiverId}`);
   
@@ -147,7 +152,13 @@ const handleIncomingMessage = async (messageData) => {
     }
     
     // Save the message once both sender and receiver are confirmed to exist
-    const message = await saveMessage(messageData);
+    const message = await saveMessage({
+      senderId, 
+      receiverId, 
+      content, 
+      timestamp,
+      tempId // Pass tempId to saveMessage
+    });
     console.log(`[BACKEND-DEBUG] Message saved with ID: ${message.id}`);
     
     
@@ -180,7 +191,9 @@ const handleIncomingMessage = async (messageData) => {
       ...message,
       auto_created_contact: newContactCreated ? newContact : null,
       sender_phone_number: senderUser.phone_number,
-      sender_username: senderUser.username
+      sender_username: senderUser.username,
+      contactId: newContact?.id || contact?.id, // Include the contact ID for the message_sent event
+      tempId // Pass tempId back to include in response
     };
   } catch (error) {
     console.error(`[BACKEND-ERROR] Error in handleIncomingMessage: ${error.message}`);

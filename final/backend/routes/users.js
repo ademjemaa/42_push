@@ -76,6 +76,15 @@ router.post('/login', async (req, res) => {
 router.get('/me', auth, async (req, res) => {
   try {
     const user = await userService.getCurrentUser(req.user.userId);
+    
+    // Check if user is null (not found)
+    if (!user) {
+      return res.status(404).json({ 
+        message: 'User not found or deleted',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+    
     res.json(user);
   } catch (error) {
     console.error('Get current user error:', error);
@@ -189,7 +198,10 @@ router.get('/avatar', auth, async (req, res) => {
     const avatar = await userService.getAvatar(req.user.userId);
     
     if (!avatar) {
-      return res.status(404).json({ message: 'Avatar not found' });
+      return res.status(404).json({ 
+        message: 'Avatar not found or user does not exist',
+        code: 'AVATAR_NOT_FOUND'
+      });
     }
     
     // Set content type and send the image
@@ -197,7 +209,10 @@ router.get('/avatar', auth, async (req, res) => {
     res.end(avatar);
   } catch (error) {
     console.error('Get avatar error:', error);
-    res.status(400).json({ message: error.message || 'Failed to get avatar' });
+    res.status(500).json({ 
+      message: 'An error occurred while retrieving the avatar',
+      code: 'SERVER_ERROR'
+    });
   }
 });
 
@@ -207,7 +222,10 @@ router.get('/:id/avatar', auth, async (req, res) => {
     const avatar = await userService.getAvatar(userId);
     
     if (!avatar) {
-      return res.status(404).json({ message: 'Avatar not found' });
+      return res.status(404).json({ 
+        message: 'Avatar not found or user does not exist',
+        code: 'AVATAR_NOT_FOUND'
+      });
     }
     
     // Set content type and send the image
@@ -215,7 +233,10 @@ router.get('/:id/avatar', auth, async (req, res) => {
     res.end(avatar);
   } catch (error) {
     console.error('Get user avatar error:', error);
-    res.status(400).json({ message: error.message || 'Failed to get avatar' });
+    res.status(500).json({ 
+      message: 'An error occurred while retrieving the avatar',
+      code: 'SERVER_ERROR'
+    });
   }
 });
 
@@ -224,19 +245,29 @@ router.get('/findByPhone/:phoneNumber', auth, async (req, res) => {
     const phoneNumber = req.params.phoneNumber;
     
     if (!phoneNumber) {
-      return res.status(400).json({ message: 'Phone number is required' });
+      return res.status(400).json({ 
+        message: 'Phone number is required',
+        code: 'MISSING_PHONE_NUMBER'
+      });
     }
     
     const user = await userService.findByPhoneNumber(phoneNumber);
     
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ 
+        message: 'User not found with this phone number',
+        code: 'USER_NOT_FOUND'
+      });
     }
     
     res.json(user);
   } catch (error) {
+    // For database or unexpected server errors
     console.error('Find user by phone error:', error);
-    res.status(400).json({ message: error.message || 'Failed to find user' });
+    res.status(500).json({ 
+      message: 'An unexpected error occurred while searching for the user',
+      code: 'SERVER_ERROR'
+    });
   }
 });
 

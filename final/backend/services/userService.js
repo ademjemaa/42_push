@@ -109,7 +109,8 @@ const getAvatar = async (userId) => {
   try {
     const user = await getOne('SELECT avatar FROM users WHERE id = ?', [userId]);
     if (!user) {
-      throw new Error('User not found');
+      console.log(`User with ID ${userId} not found when fetching avatar`);
+      return null;
     }
     
     return user.avatar;
@@ -137,9 +138,11 @@ const updateProfile = async (userId, userData) => {
 
 const findByPhoneNumber = async (phoneNumber) => {
   try {
+    // Validate phone number format, but don't throw if invalid
     const phoneRegex = /^0\d{9}$/;
     if (!phoneRegex.test(phoneNumber)) {
-      throw new Error('Phone number must be 0 followed by 9 digits');
+      console.log(`Invalid phone number format: ${phoneNumber}`);
+      return null;
     }
     
     const user = await getOne(
@@ -147,8 +150,10 @@ const findByPhoneNumber = async (phoneNumber) => {
       [phoneNumber]
     );
     
+    // Just return null if user not found (don't throw)
     return user;
   } catch (error) {
+    // Only throw database/server errors
     throw error;
   }
 };
@@ -161,7 +166,8 @@ const getCurrentUser = async (userId) => {
     );
     
     if (!user) {
-      throw new Error('User not found');
+      console.log(`User with ID ${userId} not found in database`);
+      return null;
     }
     
     return {
