@@ -8,15 +8,12 @@ export const useOrientation = () => {
     width > height ? 'landscape' : 'portrait'
   );
   
-  // Add shared values for use with Reanimated
   const widthShared = useSharedValue(width);
   const heightShared = useSharedValue(height);
 
   useEffect(() => {
-    // Update orientation when dimensions change
     setOrientation(width > height ? 'landscape' : 'portrait');
     
-    // Also update shared values
     widthShared.value = width;
     heightShared.value = height;
   }, [width, height]);
@@ -25,10 +22,8 @@ export const useOrientation = () => {
     orientation,
     isPortrait: orientation === 'portrait',
     isLandscape: orientation === 'landscape',
-    // Regular values for normal styling
     width,
     height,
-    // Shared values for animations
     widthShared,
     heightShared
   };

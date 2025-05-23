@@ -1,110 +1,95 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
+import Toast from 'react-native-toast-message'; // Import the Toast library
+import { useTranslation } from 'react-i18next';
+import i18n from '../../i18n/i18n';
 
-const { width } = Dimensions.get('window');
-
-const Toast = ({ visible, message, type = 'info', duration = 3000, onHide }) => {
-  const [fadeAnim] = useState(new Animated.Value(0));
-  const [translateY] = useState(new Animated.Value(-20));
-
-  useEffect(() => {
-    if (visible) {
-      // Show animation
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.timing(translateY, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      // Hide after duration
-      const timer = setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(fadeAnim, {
-            toValue: 0,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-          Animated.timing(translateY, {
-            toValue: -20,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-        ]).start(() => {
-          if (onHide) onHide();
-        });
-      }, duration);
-
-      return () => clearTimeout(timer);
-    }
-  }, [visible, fadeAnim, translateY, duration, onHide]);
-
-  if (!visible) return null;
-
-  // Choose icon based on type
-  let iconName = 'information-circle';
-  let backgroundColor = '#2196F3';
-
-  if (type === 'success') {
-    iconName = 'checkmark-circle';
-    backgroundColor = '#4CAF50';
-  } else if (type === 'warning') {
-    iconName = 'warning';
-    backgroundColor = '#FFC107';
-  } else if (type === 'error') {
-    iconName = 'alert-circle';
-    backgroundColor = '#F44336';
-  } else if (type === 'time') {
-    iconName = 'time';
-    backgroundColor = '#9C27B0';
-  }
-
-  return (
-    <Animated.View
-      style={[
-        styles.container,
-        { backgroundColor, opacity: fadeAnim, transform: [{ translateY }] },
-      ]}
-    >
-      <Ionicons name={iconName} size={24} color="white" style={styles.icon} />
-      <Text style={styles.message}>{message}</Text>
-    </Animated.View>
-  );
+export const showToast = (type, text1, text2 = '', options = {}) => {
+  const safeText1 = String(text1 || '');
+  const safeText2 = String(text2 || '');
+  
+  Toast.show({
+    type: type || 'info', // info, success, error, etc
+    position: options.position || 'bottom',
+    text1: safeText1,
+    text2: safeText2,
+    visibilityTime: options.duration || 3000,
+    autoHide: options.autoHide !== false,
+    topOffset: options.topOffset || 40,
+    bottomOffset: options.bottomOffset || 40,
+    ...options
+  });
 };
 
-const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    top: 50,
-    alignSelf: 'center',
-    width: width - 40,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-    borderRadius: 8,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    zIndex: 9999,
-  },
-  icon: {
-    marginRight: 10,
-  },
-  message: {
-    flex: 1,
-    fontSize: 16,
-    color: 'white',
-    fontWeight: '500',
-  },
-});
+export const showSuccessToast = (messageKey, params = {}, options = {}) => {
+  try {
+    const text1 = String(i18n.t(`common.success`));
+    const text2 = String(i18n.t(messageKey, params));
+    showToast('success', text1, text2, options);
+  } catch (error) {
+    console.error('Error showing success toast:', error);
+    showToast('success', 'Success', String(messageKey), options);
+  }
+};
 
-export default Toast; 
+export const showErrorToast = (messageKey, params = {}, options = {}) => {
+  try {
+    const text1 = String(i18n.t(`common.error`));
+    const text2 = String(i18n.t(messageKey, params));
+    showToast('error', text1, text2, options);
+  } catch (error) {
+    console.error('Error showing error toast:', error);
+    showToast('error', 'Error', String(messageKey), options);
+  }
+};
+
+export const showInfoToast = (messageKey, params = {}, options = {}) => {
+  try {
+    const text1 = String(i18n.t(messageKey, params));
+    showToast('info', text1, '', options);
+  } catch (error) {
+    console.error('Error showing info toast:', error);
+    showToast('info', String(messageKey), '', options);
+  }
+};
+
+const AppStateToastListener = () => {
+  const backgroundStartTimeRef = useRef(null);
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState) => {
+      if (nextAppState === 'active') {
+        if (backgroundStartTimeRef.current) {
+          const now = new Date();
+          const timeInBackground = now - backgroundStartTimeRef.current;
+          const seconds = Math.round(timeInBackground / 1000);
+
+          const minutes = Math.floor(seconds / 60);
+          const remainingSeconds = seconds % 60;
+          const formattedTime = minutes
+            ? `${minutes}m ${remainingSeconds}s`
+            : `${remainingSeconds}s`;
+
+          showToast(
+            'info',
+            String(t('lifecycle.backgroundTime')),
+            String(formattedTime),
+            { visibilityTime: 3000 }
+          );
+
+          backgroundStartTimeRef.current = null;
+        }
+      } else if (nextAppState === 'background') {
+        backgroundStartTimeRef.current = new Date();
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription.remove();
+  }, [t]);
+
+  return null;
+};
+
+export default AppStateToastListener;

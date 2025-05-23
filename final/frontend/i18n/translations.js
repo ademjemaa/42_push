@@ -42,6 +42,7 @@ export const translations = {
       avatarPermission: 'We need camera roll permission to upload an avatar',
       imageFailed: 'Failed to select image',
       registerSuccess: 'Registration successful! You can now login.',
+      loginSuccess: 'Login successful! Welcome back.',
       ok: 'OK'
     },
     home: {
@@ -176,6 +177,7 @@ export const translations = {
       avatarPermission: 'Nous avons besoin de l\'autorisation d\'accéder à vos photos pour télécharger un avatar',
       imageFailed: 'Échec de la sélection de l\'image',
       registerSuccess: 'Inscription réussie! Vous pouvez maintenant vous connecter.',
+      loginSuccess: 'Connexion réussie! Bienvenue de retour.',
       ok: 'OK'
     },
     home: {

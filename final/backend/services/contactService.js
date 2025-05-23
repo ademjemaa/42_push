@@ -211,26 +211,34 @@ const deleteContact = async (userId, contactId) => {
     );
     
     if (!contact) {
-      throw new Error('Contact not found');
+      // If contact doesn't exist, return success instead of throwing an error
+      // This helps with race conditions where a contact might be deleted multiple times
+      console.log(`[CONTACT-SERVICE] Contact with ID ${contactId} not found for user ${userId}, considering it already deleted`);
+      return { success: true, message: 'Contact already deleted or does not exist' };
     }
     
     // Get the contact_user_id (if it exists) for message deletion
     const contactUserId = contact.contact_user_id;
     
-    // Delete all messages between the users
-    if (contactUserId) {
-      console.log(`[CONTACT-SERVICE] Deleting messages between user ${userId} and contact user ${contactUserId}`);
-      
-      // Lazy-load messageService to avoid circular dependency
-      const messageService = require('./messageService');
-      await messageService.deleteConversation(userId, contactUserId);
-    } else {
-      console.log(`[CONTACT-SERVICE] Contact has no associated user ID - deleting messages using contact ID directly`);
-      // Use the contact ID as a fallback when there is no associated user
-      await runQuery(
-        'DELETE FROM messages WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)',
-        [userId, contactId, contactId, userId]
-      );
+    try {
+      // Delete all messages between the users - wrapped in try/catch to continue even if message deletion fails
+      if (contactUserId) {
+        console.log(`[CONTACT-SERVICE] Deleting messages between user ${userId} and contact user ${contactUserId}`);
+        
+        // Lazy-load messageService to avoid circular dependency
+        const messageService = require('./messageService');
+        await messageService.deleteConversation(userId, contactUserId);
+      } else {
+        console.log(`[CONTACT-SERVICE] Contact has no associated user ID - deleting messages using contact ID directly`);
+        // Use the contact ID as a fallback when there is no associated user
+        await runQuery(
+          'DELETE FROM messages WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)',
+          [userId, contactId, contactId, userId]
+        );
+      }
+    } catch (messageError) {
+      // Log the error but continue with contact deletion
+      console.error(`[CONTACT-SERVICE] Error deleting messages: ${messageError.message}`);
     }
     
     // Delete contact from database

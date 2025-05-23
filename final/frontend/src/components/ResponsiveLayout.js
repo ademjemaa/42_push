@@ -26,24 +26,20 @@ const ResponsiveLayout = ({
   header,
   footer
 }) => {
-  // Important: Use only the regular (non-shared) values for direct styles
   const { isPortrait, width, height } = useGlobalOrientation();
 
-  // Determine container styles based on orientation
   const containerStyle = [
     styles.container,
     isPortrait ? styles.portraitContainer : styles.landscapeContainer,
     style
   ];
 
-  // Content container styles
   const contentStyle = [
     styles.contentContainer,
     isPortrait ? styles.portraitContent : styles.landscapeContent,
     contentContainerStyle
   ];
 
-  // Render the layout
   return (
     <SafeAreaView style={containerStyle} edges={safeAreaEdges}>
       {header}
@@ -73,10 +69,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
   },
   portraitContainer: {
-    // Portrait-specific container styles
   },
   landscapeContainer: {
-    // Landscape-specific container styles
   },
   contentContainer: {
     padding: 0,

@@ -13,7 +13,6 @@ const store = configureStore({
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
       serializableCheck: {
-        // Ignore non-serializable values in the socket middleware
         ignoredActions: ['socket/connect', 'socket/disconnect'],
         ignoredPaths: ['socket.instance'],
       },

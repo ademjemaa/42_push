@@ -14,40 +14,30 @@ export const OrientationContext = createContext();
  */
 export const OrientationProvider = ({ children }) => {
   const { width, height } = useWindowDimensions();
-  // Use plain state for orientation string
   const [orientation, setOrientation] = useState(
     width > height ? 'landscape' : 'portrait'
   );
   
-  // Shared values for animations - these should be used directly in animated styles
   const widthShared = useSharedValue(width);
   const heightShared = useSharedValue(height);
 
-  // Update orientation when dimensions change
   useEffect(() => {
     setOrientation(width > height ? 'landscape' : 'portrait');
-    // Update shared values
     widthShared.value = width;
     heightShared.value = height;
   }, [width, height]);
   
-  // Values to be provided by the context
   const orientationData = {
-    // Basic orientation info
     orientation,
     isPortrait: orientation === 'portrait',
     isLandscape: orientation === 'landscape',
-    // Regular values for non-animated components
     width,
     height,
-    // Shared values for animations
     widthShared,
     heightShared,
-    // Add some useful derived values
     screenRatio: width / height,
     deviceAspectRatio: Math.max(width, height) / Math.min(width, height),
     screenSize: Math.sqrt(width * width + height * height),
-    // Helpers for responsive sizing
     getResponsiveSize: (portraitSize, landscapeSize) => 
       orientation === 'portrait' ? portraitSize : landscapeSize,
     getWidthPercentage: (percentage) => (width * percentage) / 100,

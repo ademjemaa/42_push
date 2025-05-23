@@ -3,7 +3,7 @@ const contactService = require('./contactService');
 
 // Save a new message
 const saveMessage = async (messageData) => {
-  const { senderId, receiverId, content, timestamp, tempId } = messageData;
+  const { senderId, receiverId, content, timestamp } = messageData;
   
   try {
     // Insert message into database
@@ -17,11 +17,6 @@ const saveMessage = async (messageData) => {
       'SELECT * FROM messages WHERE id = ?',
       [result.lastID]
     );
-    
-    // Include tempId in the returned message for frontend reference
-    if (tempId) {
-      message.tempId = tempId;
-    }
     
     return message;
   } catch (error) {
@@ -112,16 +107,46 @@ const getUnreadMessages = async (userId) => {
 
 // Delete conversation
 const deleteConversation = async (userId, contactId) => {
+  console.log(`[BACKEND-DEBUG] Deleting conversation between user ${userId} and contact ${contactId}`);
+  
   try {
+    // First check if contactId is a valid contact record or user ID
+    const contactRecord = await getOne('SELECT * FROM contacts WHERE id = ?', [contactId]);
+    
+    // If contactId is a contact record ID, use the contact_user_id instead if available
+    let targetId = contactId;
+    if (contactRecord && contactRecord.contact_user_id) {
+      console.log(`[BACKEND-DEBUG] Using contact_user_id=${contactRecord.contact_user_id} for message deletion`);
+      targetId = contactRecord.contact_user_id;
+    }
+    
+    // Check if there are any messages to delete
+    const messageCount = await getOne(
+      'SELECT COUNT(*) as count FROM messages WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)',
+      [userId, targetId, targetId, userId]
+    );
+    
+    console.log(`[BACKEND-DEBUG] Found ${messageCount.count} messages to delete`);
+    
     // Delete all messages between the users
     await runQuery(
       'DELETE FROM messages WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)',
-      [userId, contactId, contactId, userId]
+      [userId, targetId, targetId, userId]
     );
     
-    return { success: true, message: 'Conversation deleted successfully' };
+    return { 
+      success: true, 
+      message: 'Conversation deleted successfully',
+      deletedCount: messageCount.count 
+    };
   } catch (error) {
-    throw error;
+    console.error(`[BACKEND-ERROR] Error deleting conversation: ${error.message}`);
+    // Return a more informative error
+    return { 
+      success: false, 
+      message: `Error deleting conversation: ${error.message}`,
+      error: error.message 
+    };
   }
 };
 
@@ -152,13 +177,7 @@ const handleIncomingMessage = async (messageData) => {
     }
     
     // Save the message once both sender and receiver are confirmed to exist
-    const message = await saveMessage({
-      senderId, 
-      receiverId, 
-      content, 
-      timestamp,
-      tempId // Pass tempId to saveMessage
-    });
+    const message = await saveMessage(messageData);
     console.log(`[BACKEND-DEBUG] Message saved with ID: ${message.id}`);
     
     
@@ -186,14 +205,17 @@ const handleIncomingMessage = async (messageData) => {
       }
     }
     
+    // Add the contact ID to the response for proper message routing
+    const contactId = newContact ? newContact.id : receiverId;
+    
     // Return message with additional information about auto-created contact 
     return {
       ...message,
+      contactId: contactId, // Add contactId to the response so frontend can properly track the message
       auto_created_contact: newContactCreated ? newContact : null,
       sender_phone_number: senderUser.phone_number,
       sender_username: senderUser.username,
-      contactId: newContact?.id || contact?.id, // Include the contact ID for the message_sent event
-      tempId // Pass tempId back to include in response
+      tempId: tempId || null // Pass through tempId for proper message replacement
     };
   } catch (error) {
     console.error(`[BACKEND-ERROR] Error in handleIncomingMessage: ${error.message}`);

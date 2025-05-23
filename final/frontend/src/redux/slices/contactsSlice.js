@@ -8,7 +8,6 @@ export const fetchContacts = createAsyncThunk(
     try {
       const contacts = await contactsAPI.getAllContacts();
       
-      // Load user avatars for contacts that have a user ID
       for (const contact of contacts) {
         if (contact.contact_user_id) {
           const avatarBase64 = await authAPI.getUserAvatar(contact.contact_user_id);
@@ -31,7 +30,6 @@ export const getContactById = createAsyncThunk(
     try {
       const contact = await contactsAPI.getContactById(contactId);
       
-      // If the contact has a user ID, try to get their avatar
       if (contact.contact_user_id) {
         const avatarBase64 = await authAPI.getUserAvatar(contact.contact_user_id);
         if (avatarBase64) {
@@ -52,7 +50,6 @@ export const createContact = createAsyncThunk(
     try {
       const newContact = await contactsAPI.createContact(contactData);
       
-      // If the new contact has a user ID, try to get their avatar
       if (newContact.contact_user_id) {
         const avatarBase64 = await authAPI.getUserAvatar(newContact.contact_user_id);
         if (avatarBase64) {
@@ -73,7 +70,6 @@ export const updateContact = createAsyncThunk(
     try {
       const updatedContact = await contactsAPI.updateContact(contactId, contactData);
       
-      // If the updated contact has a user ID, try to get their avatar
       if (updatedContact.contact_user_id) {
         const avatarBase64 = await authAPI.getUserAvatar(updatedContact.contact_user_id);
         if (avatarBase64) {
@@ -100,7 +96,6 @@ export const deleteContact = createAsyncThunk(
   }
 );
 
-// Contacts slice
 const contactsSlice = createSlice({
   name: 'contacts',
   initialState: {
@@ -110,7 +105,6 @@ const contactsSlice = createSlice({
     currentContact: null,
   },
   reducers: {
-    // Handle socket events directly in the reducer
     contactAdded: (state, action) => {
       const newContact = action.payload;
       if (!state.items.find(contact => contact.id === newContact.id)) {
@@ -133,7 +127,6 @@ const contactsSlice = createSlice({
       const { contactId, message } = action.payload;
       const index = state.items.findIndex(contact => contact.id === contactId);
       if (index !== -1) {
-        // Update the lastMessage property of the contact
         state.items[index].lastMessage = message;
       }
     },
@@ -164,7 +157,6 @@ const contactsSlice = createSlice({
       .addCase(getContactById.fulfilled, (state, action) => {
         state.currentContact = action.payload;
         
-        // Also update in the items array if it exists
         const index = state.items.findIndex(contact => contact.id === action.payload.id);
         if (index !== -1) {
           state.items[index] = action.payload;
@@ -185,7 +177,6 @@ const contactsSlice = createSlice({
           state.items[index] = action.payload;
         }
         
-        // Also update currentContact if it's the same one
         if (state.currentContact && state.currentContact.id === action.payload.id) {
           state.currentContact = action.payload;
         }
@@ -195,7 +186,6 @@ const contactsSlice = createSlice({
       .addCase(deleteContact.fulfilled, (state, action) => {
         state.items = state.items.filter(contact => contact.id !== action.payload);
         
-        // Clear currentContact if it's the deleted one
         if (state.currentContact && state.currentContact.id === action.payload) {
           state.currentContact = null;
         }
@@ -203,11 +193,9 @@ const contactsSlice = createSlice({
   },
 });
 
-// Export actions and reducer
 export const { contactAdded, contactUpdated, contactDeleted, updateContactLastMessage, clearContacts } = contactsSlice.actions;
 export default contactsSlice.reducer;
 
-// Selectors
 export const selectAllContacts = (state) => state.contacts.items;
 export const selectContactById = (state, contactId) => 
   state.contacts.items.find(contact => contact.id === contactId);

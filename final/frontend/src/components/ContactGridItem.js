@@ -8,23 +8,16 @@ const ContactGridItem = ({ contact, onPress, headerColor }) => {
   const { t } = useTranslation();
   const { isPortrait, width } = useGlobalOrientation();
   
-  // Calculate item size based on screen width and number of columns
   const numColumns = isPortrait ? 2 : 3;
   
-  // Account for all margins and padding to prevent clipping
-  // Total horizontal spacing: container padding (16px each side) + 
-  // grid container padding (8px each side) + item margin (8px each side) * numColumns
   const totalHorizontalPadding = 16 + 16 + (16 * numColumns);
   const availableWidth = width - totalHorizontalPadding;
   const itemSize = availableWidth / numColumns;
   
-  // Get display name (nickname or phone number)
   const displayName = contact.nickname || contact.phone_number;
   
-  // Check if contact has recent messages
   const hasMessages = contact.lastMessage !== undefined && contact.lastMessage !== null;
   
-  // Format timestamp for last message
   const formatLastMessageTime = (timestamp) => {
     if (!timestamp) return '';
     

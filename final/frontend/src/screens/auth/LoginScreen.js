@@ -8,7 +8,6 @@ import {
   KeyboardAvoidingView, 
   Platform, 
   ScrollView,
-  Alert,
   ActivityIndicator
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -16,57 +15,52 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGlobalOrientation } from '../../contexts/OrientationContext';
+import { showErrorToast, showSuccessToast } from '../../components/Toast';
 
 const LoginScreen = ({ navigation }) => {
   const { t } = useTranslation();
   const { headerColor } = useTheme();
   const { login, isLoading } = useAuth();
-  // Use the global orientation hook with shared values
   const { isPortrait } = useGlobalOrientation();
   
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   const [validNumber, setValidNumber] = useState(false);
   
-  // Validate phone number format as user types
   useEffect(() => {
-    // Validate phone number format: 0 followed by 9 digits
     const phoneRegex = /^0\d{9}$/;
     setValidNumber(phoneRegex.test(phoneNumber));
   }, [phoneNumber]);
   
-  // Handle phone number input with proper formatting
   const handlePhoneNumberChange = (text) => {
-    // Only allow digits and limit to 10 characters (0 + 9 digits)
     const formattedNumber = text.replace(/[^0-9]/g, '').slice(0, 10);
     setPhoneNumber(formattedNumber);
   };
   
   const handleLogin = async () => {
-    // Validate inputs
     if (!phoneNumber.trim()) {
-      Alert.alert('Error', t('auth.phoneRequired'));
+      showErrorToast('auth.phoneRequired');
       return;
     }
     
     if (!validNumber) {
-      Alert.alert('Error', 'Phone number must be 0 followed by 9 digits');
+      showErrorToast('auth.phoneFormat');
       return;
     }
     
     if (!password.trim()) {
-      Alert.alert('Error', t('auth.passwordRequired'));
+      showErrorToast('auth.passwordRequired');
       return;
     }
     
     try {
       await login({ phone_number: phoneNumber, password });
+      showSuccessToast('auth.loginSuccess'); 
     } catch (error) {
-      Alert.alert('Error', error.message);
+      showErrorToast('common.error', { message: error.message });
     }
   };
   
-  // Layout changes based on orientation
   const containerStyle = isPortrait 
     ? styles.portraitContainer 
     : styles.landscapeContainer;
@@ -99,7 +93,7 @@ const LoginScreen = ({ navigation }) => {
               />
               {phoneNumber && !validNumber && (
                 <Text style={styles.errorText}>
-                  Phone number must be 0 followed by 9 digits
+                  {t('auth.phoneFormat')}
                 </Text>
               )}
             </View>

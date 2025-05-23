@@ -2,7 +2,6 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI } from '../../services/api';
 
-// Async thunks for authentication operations
 export const bootstrapAuth = createAsyncThunk(
   'auth/bootstrap',
   async (_, { rejectWithValue }) => {
@@ -15,14 +14,10 @@ export const bootstrapAuth = createAsyncThunk(
         return { userToken: null, userId: null, userProfile: null };
       }
       
-      // If we have stored credentials, validate them with the server
       try {
-        // Get current user profile including avatar
         const userData = await authAPI.getCurrentUser();
         
-        // Check if userData is null (user not found)
         if (!userData) {
-          // Clean up stored credentials
           await AsyncStorage.removeItem('userToken');
           await AsyncStorage.removeItem('userId');
           await AsyncStorage.removeItem('userProfile');
@@ -30,14 +25,12 @@ export const bootstrapAuth = createAsyncThunk(
           return { userToken: null, userId: null, userProfile: null };
         }
         
-        // Store profile data without the avatar to prevent CursorWindow errors
         const profileForStorage = {...userData};
         if (profileForStorage.avatar) {
           profileForStorage.hasAvatar = true;
           delete profileForStorage.avatar;
         }
         
-        // Update stored profile
         await AsyncStorage.setItem('userProfile', JSON.stringify(profileForStorage));
         
         return {
@@ -46,7 +39,6 @@ export const bootstrapAuth = createAsyncThunk(
           userProfile: userData
         };
       } catch (error) {
-        // Clean up stored credentials on error
         await AsyncStorage.removeItem('userToken');
         await AsyncStorage.removeItem('userId');
         await AsyncStorage.removeItem('userProfile');
@@ -69,7 +61,6 @@ export const loginUser = createAsyncThunk(
         throw new Error('Invalid login response from server');
       }
       
-      // Fetch the complete user profile including avatar
       const currentUser = await authAPI.getCurrentUser();
       
       return {
@@ -101,7 +92,6 @@ export const logoutUser = createAsyncThunk(
     try {
       await authAPI.logout();
       
-      // Clear all auth-related items from storage
       const keysToRemove = [
         'userToken', 
         'userId', 
@@ -110,7 +100,6 @@ export const logoutUser = createAsyncThunk(
       
       await Promise.all(keysToRemove.map(key => AsyncStorage.removeItem(key)));
       
-      // Dispatch socket disconnect
       dispatch({ type: 'socket/disconnect' });
       
       return { success: true };
@@ -126,20 +115,17 @@ export const updateUserProfile = createAsyncThunk(
     try {
       const updatedProfile = await authAPI.updateProfile(profileData);
       
-      // If we previously had a complete profile with avatar, preserve it
       const currentProfile = getState().auth.userProfile;
       if (currentProfile && currentProfile.avatar) {
         updatedProfile.avatar = currentProfile.avatar;
       }
       
-      // Store profile data without the avatar to prevent CursorWindow errors
       const profileForStorage = {...updatedProfile};
       if (profileForStorage.avatar) {
         profileForStorage.hasAvatar = true;
         delete profileForStorage.avatar;
       }
       
-      // Update stored profile
       await AsyncStorage.setItem('userProfile', JSON.stringify(profileForStorage));
       
       return updatedProfile;
@@ -155,17 +141,14 @@ export const uploadUserAvatar = createAsyncThunk(
     try {
       await authAPI.uploadAvatar(imageUri);
       
-      // Get updated profile with avatar
       const updatedProfile = await authAPI.getCurrentUser();
       
-      // Store profile data without the avatar to prevent CursorWindow errors
       const profileForStorage = {...updatedProfile};
       if (profileForStorage.avatar) {
         profileForStorage.hasAvatar = true;
         delete profileForStorage.avatar;
       }
       
-      // Update stored profile
       await AsyncStorage.setItem('userProfile', JSON.stringify(profileForStorage));
       
       return updatedProfile;
@@ -175,7 +158,6 @@ export const uploadUserAvatar = createAsyncThunk(
   }
 );
 
-// Auth slice
 const authSlice = createSlice({
   name: 'auth',
   initialState: {
@@ -192,7 +174,6 @@ const authSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // Bootstrap auth
       .addCase(bootstrapAuth.pending, (state) => {
         state.isLoading = true;
       })
@@ -289,7 +270,6 @@ const authSlice = createSlice({
 
 export const { resetAuthError } = authSlice.actions;
 
-// Selectors
 export const selectIsAuthenticated = (state) => !!state.auth.userToken;
 export const selectIsLoading = (state) => state.auth.isLoading;
 export const selectUserProfile = (state) => state.auth.userProfile;

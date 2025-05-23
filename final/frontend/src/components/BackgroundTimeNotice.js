@@ -5,10 +5,8 @@ import { useAppLifecycle } from '../contexts/AppLifecycleContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 
-// Get screen dimensions
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Main component that works in both production and dev modes
 const BackgroundTimeNotice = () => {
   const { t } = useTranslation();
   const { 
@@ -21,23 +19,17 @@ const BackgroundTimeNotice = () => {
   } = useAppLifecycle();
   const { headerColor } = useTheme();
   
-  // Local state to ensure visibility
   const [isVisible, setIsVisible] = useState(false);
   
-  // Track when component mounted
   const hasMounted = useRef(false);
   
-  // Component did mount
   useEffect(() => {
     console.log('[NOTICE] BackgroundTimeNotice mounted');
     hasMounted.current = true;
     
-    // Set up direct AppState listener on the component itself
     const handleAppStateChange = (nextAppState) => {
       console.log(`[NOTICE] Direct AppState change: ${nextAppState}`);
       if (nextAppState === 'active') {
-        // Force check visibility when coming to foreground with multiple retries
-        // This handles race conditions where context updates happen after app state changes
         let retryCount = 0;
         const maxRetries = 3;
         
@@ -49,17 +41,14 @@ const BackgroundTimeNotice = () => {
             console.log('[NOTICE] Direct check: showBackgroundAlert is true, forcing visible');
             setIsVisible(true);
           } else if (retryCount < maxRetries) {
-            // Retry after a delay with increasing intervals
             setTimeout(checkVisibility, 200 * retryCount);
           }
         };
         
-        // Start the retry sequence
         setTimeout(checkVisibility, 200);
       }
     };
     
-    // Subscribe to AppState changes
     let subscription;
     try {
       subscription = AppState.addEventListener('change', handleAppStateChange);
@@ -80,14 +69,12 @@ const BackgroundTimeNotice = () => {
     };
   }, [showBackgroundAlert]);
   
-  // Update local visibility based on context
   useEffect(() => {
     console.log('[NOTICE] Context update detected, showBackgroundAlert:', showBackgroundAlert);
     
     if (hasMounted.current) {
       setIsVisible(showBackgroundAlert);
       
-      // Double-check after a slight delay to ensure the state has settled
       if (showBackgroundAlert) {
         setTimeout(() => {
           setIsVisible(true);
@@ -96,11 +83,9 @@ const BackgroundTimeNotice = () => {
     }
   }, [showBackgroundAlert, refreshCounter]);
   
-  // Watch for changes in showBackgroundAlert
   useEffect(() => {
     console.log('[NOTICE] showBackgroundAlert changed to:', showBackgroundAlert);
     
-    // When showBackgroundAlert becomes true, ensure visibility after a brief delay
     if (showBackgroundAlert) {
       const timer = setTimeout(() => {
         console.log('[NOTICE] Delayed force-check of visibility');
@@ -111,18 +96,15 @@ const BackgroundTimeNotice = () => {
     }
   }, [showBackgroundAlert]);
   
-  // Watch for refreshCounter changes
   useEffect(() => {
     console.log('[NOTICE] refreshCounter changed to:', refreshCounter);
     
-    // When refresh counter changes, check visibility state
     if (refreshCounter > 0 && showBackgroundAlert) {
       console.log('[NOTICE] RefreshCounter updated, checking visibility');
       setIsVisible(true);
     }
   }, [refreshCounter, showBackgroundAlert]);
   
-  // Auto-hide the alert after 5 seconds
   useEffect(() => {
     let timer;
     if (isVisible) {
@@ -142,18 +124,14 @@ const BackgroundTimeNotice = () => {
     };
   }, [isVisible, hideBackgroundAlert]);
   
-  // Log renders and state
   console.log('[NOTICE] BackgroundTimeNotice rendering, showBackgroundAlert:', showBackgroundAlert, 'isVisible:', isVisible, 'refreshCounter:', refreshCounter, 'appState:', appState);
   
-  // Don't render if we shouldn't show the alert
   if (!isVisible) {
     return null;
   }
   
-  // Ensure we have proper values to display
   const backgroundTimeText = t('lifecycle.backgroundTime') || 'Time in background';
   
-  // Format and log the background time
   let formattedTime = '0:00';
   if (formatBackgroundTime && backgroundTime) {
     formattedTime = formatBackgroundTime();

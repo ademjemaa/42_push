@@ -129,9 +129,17 @@ io.on('connection', (socket) => {
   // Handle private message
   async function handlePrivateMessage(socket, data) {
     try {
+      // Extract data depending on format (direct or wrapped with type/payload)
+      let messageData = data;
+      
+      // If data is wrapped in a payload structure, extract it
+      if (data.type && data.payload) {
+        messageData = data.payload;
+      }
+      
       // Extract data from the message payload
       // Support both formats: { content } (frontend) and { message } (legacy/testing)
-      const { senderId, receiverId, content, message, timestamp, tempId } = data;
+      const { senderId, receiverId, content, message, timestamp, tempId } = messageData;
       const messageContent = content || message; // Use content if provided, fallback to message
       
       if (!senderId || !receiverId || (!content && !message) || !timestamp) {
@@ -176,16 +184,16 @@ io.on('connection', (socket) => {
         const messagePayload = {
           type: 'PRIVATE_MESSAGE',
           payload: {
-            id: savedMessage.id,
-            sender_id: senderId,
-            receiver_id: receiverId, 
-            content: messageContent,
-            timestamp,
-            is_read: false,
-            // Include auto-created contact information if available
-            auto_created_contact: savedMessage.auto_created_contact || null,
-            sender_phone_number: savedMessage.sender_phone_number,
-            sender_username: savedMessage.sender_username
+          id: savedMessage.id,
+          sender_id: senderId,
+          receiver_id: receiverId, 
+          content: messageContent,
+          timestamp,
+          is_read: false,
+          // Include auto-created contact information if available
+          auto_created_contact: savedMessage.auto_created_contact || null,
+          sender_phone_number: savedMessage.sender_phone_number,
+          sender_username: savedMessage.sender_username
           }
         };
         

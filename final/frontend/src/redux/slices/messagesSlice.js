@@ -40,17 +40,33 @@ export const markAsRead = createAsyncThunk(
 
 export const deleteConversation = createAsyncThunk(
   'messages/deleteConversation',
-  async (contactId, { rejectWithValue }) => {
+  async (contactId, { rejectWithValue, dispatch }) => {
+    if (!contactId) {
+      console.log('[MESSAGES-SLICE] No contactId provided, skipping deletion');
+      return contactId;
+    }
+    
     try {
       await messagesAPI.deleteConversation(contactId);
       return contactId;
     } catch (error) {
-      return rejectWithValue(error.message);
+      console.error('[MESSAGES-SLICE] Error deleting conversation:', error);
+      
+
+      if (error.message && (
+        error.message.includes('not found') || 
+        error.message.includes('Contact not found')
+      )) {
+        console.log('[MESSAGES-SLICE] Contact not found, continuing with local cleanup');
+        return contactId; 
+      }
+      
+      console.warn('[MESSAGES-SLICE] Continuing with local cleanup despite API error');
+      return contactId;
     }
   }
 );
 
-// Messages slice
 const messagesSlice = createSlice({
   name: 'messages',
   initialState: {
@@ -60,18 +76,15 @@ const messagesSlice = createSlice({
     unreadCounts: {}, // { contactId: count }
   },
   reducers: {
-    // Handle socket events directly in the reducer
     messageReceived: (state, action) => {
       const { contactId, message, tempId } = action.payload;
       if (!state.conversations[contactId]) {
         state.conversations[contactId] = [];
       }
       
-      // If we have a tempId, replace the temporary message with the real one
       if (tempId) {
         const tempIndex = state.conversations[contactId].findIndex(msg => msg.id === tempId);
         if (tempIndex !== -1) {
-          // Replace the temp message with the real one
           state.conversations[contactId][tempIndex] = {
             ...message,
             sending: false
@@ -80,7 +93,6 @@ const messagesSlice = createSlice({
         }
       }
       
-      // Check for duplicates before adding
       const isDuplicate = state.conversations[contactId].some(msg => 
         msg.id === message.id || 
         (msg.content === message.content && 
@@ -90,12 +102,10 @@ const messagesSlice = createSlice({
       if (!isDuplicate) {
         state.conversations[contactId].push(message);
         
-        // Sort messages by timestamp (ascending order, oldest first)
         state.conversations[contactId].sort((a, b) => 
           new Date(a.timestamp) - new Date(b.timestamp)
         );
         
-        // Increment unread count if this is an incoming message
         if (!message.is_read) {
           state.unreadCounts[contactId] = (state.unreadCounts[contactId] || 0) + 1;
         }
@@ -115,14 +125,12 @@ const messagesSlice = createSlice({
     messageRead: (state, action) => {
       const { contactId, messageId } = action.payload;
       if (state.conversations[contactId]) {
-        // Mark specific message as read
         if (messageId) {
           const message = state.conversations[contactId].find(msg => msg.id === messageId);
           if (message) {
             message.is_read = true;
           }
         } 
-        // Mark all messages as read
         else {
           state.conversations[contactId].forEach(message => {
             message.is_read = true;
@@ -139,7 +147,6 @@ const messagesSlice = createSlice({
       state.unreadCounts = {};
     },
     
-    // Clear a specific conversation
     clearConversation: (state, action) => {
       const contactId = action.payload;
       delete state.conversations[contactId];
@@ -154,7 +161,6 @@ const messagesSlice = createSlice({
       })
       .addCase(fetchConversation.fulfilled, (state, action) => {
         const { contactId, messages } = action.payload;
-        // Store the messages and ensure they're sorted by timestamp
         state.conversations[contactId] = [...messages].sort((a, b) => 
           new Date(a.timestamp) - new Date(b.timestamp)
         );
@@ -208,7 +214,6 @@ const messagesSlice = createSlice({
   },
 });
 
-// Export actions and reducer
 export const { 
   messageReceived, 
   messageDelivered, 
@@ -218,14 +223,12 @@ export const {
 } = messagesSlice.actions;
 export default messagesSlice.reducer;
 
-// Simple selectors
 const selectMessages = state => state.messages;
 const selectConversations = state => state.messages.conversations;
 export const selectMessagesStatus = state => state.messages.status;
 export const selectMessagesError = state => state.messages.error;
 const selectUnreadCounts = state => state.messages.unreadCounts;
 
-// Memoized selectors
 export const selectConversation = createSelector(
   [selectConversations, (_, contactId) => contactId],
   (conversations, contactId) => conversations[contactId] || []
